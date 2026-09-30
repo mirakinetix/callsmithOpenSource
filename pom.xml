@@ -69,6 +69,19 @@
                 <version>3.5.4</version>
             </plugin>
 
+            <!-- JavaFX application execution -->
+            <plugin>
+                <groupId>org.openjfx</groupId>
+                <artifactId>javafx-maven-plugin</artifactId>
+                <version>0.0.8</version>
+                <configuration>
+                    <mainClass>com.mirakinetix.callsmith.CallsmithApplication</mainClass>
+                    <options>
+                        <option>--enable-native-access=javafx.graphics</option>
+                    </options>
+                </configuration>
+            </plugin>
+
         </plugins>
     </build>
 
