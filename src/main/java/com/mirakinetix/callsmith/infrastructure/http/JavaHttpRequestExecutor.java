@@ -67,6 +67,8 @@ public final class JavaHttpRequestExecutor implements RequestExecutor {
                     response.uri().toString()
             );
 
+        } catch (IllegalArgumentException e) {
+            throw new IllegalStateException("Invalid HTTP request", e);
         } catch (IOException e) {
             throw new IllegalStateException("HTTP request failed", e);
         } catch (InterruptedException e) {
