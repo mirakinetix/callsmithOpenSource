@@ -3,6 +3,7 @@ package com.mirakinetix.callsmith.ui.request;
 import com.mirakinetix.callsmith.application.http.HttpRequestService;
 import com.mirakinetix.callsmith.domain.http.HttpRequest;
 import com.mirakinetix.callsmith.domain.http.HttpResponse;
+import com.mirakinetix.callsmith.ui.response.ResponseInspector;
 import javafx.application.Platform;
 import javafx.geometry.Insets;
 import javafx.scene.control.Button;
@@ -49,20 +50,8 @@ public final class RequestBuilderView extends BorderPane {
     private final TextArea requestBody =
             new TextArea();
 
-    private final TextArea responseBody =
-            new TextArea();
-
-    private final TextArea responseHeaders =
-            new TextArea();
-
-    private final Label responseStatus =
-            new Label("Status: -");
-
-    private final Label responseTiming =
-            new Label("Time: -");
-
-    private final Label responseSize =
-            new Label("Size: -");
+    private final ResponseInspector responseInspector =
+            new ResponseInspector();
 
     public RequestBuilderView(
             HttpRequestService httpRequestService,
@@ -88,16 +77,15 @@ public final class RequestBuilderView extends BorderPane {
 
         methodSelector.getSelectionModel().select("GET");
 
-        urlField.setPromptText("https://example.com/api");
+        urlField.setPromptText(
+                "https://example.com/api"
+        );
 
-        requestBody.setPromptText("Request body");
+        requestBody.setPromptText(
+                "Request body"
+        );
+
         requestBody.setWrapText(true);
-
-        responseHeaders.setEditable(false);
-        responseHeaders.setWrapText(true);
-
-        responseBody.setEditable(false);
-        responseBody.setWrapText(true);
 
         sendButton.setOnAction(
                 event -> executeRequest()
@@ -161,54 +149,8 @@ public final class RequestBuilderView extends BorderPane {
                 Priority.ALWAYS
         );
 
-        HBox responseMeta =
-                new HBox(
-                        16,
-                        responseStatus,
-                        responseTiming,
-                        responseSize
-                );
-
-        VBox responseHeaderSection =
-                new VBox(
-                        6,
-                        new Label("Headers"),
-                        responseHeaders
-                );
-
-        responseHeaders.setPrefRowCount(5);
-
-        VBox.setVgrow(
-                responseHeaders,
-                Priority.ALWAYS
-        );
-
-        VBox responseContent =
-                new VBox(
-                        8,
-                        new Label("Response"),
-                        responseMeta,
-                        responseHeaderSection,
-                        new Label("Body"),
-                        responseBody
-                );
-
-        responseContent.setPadding(
-                new Insets(12)
-        );
-
-        VBox.setVgrow(
-                responseHeaderSection,
-                Priority.ALWAYS
-        );
-
-        VBox.setVgrow(
-                responseBody,
-                Priority.ALWAYS
-        );
-
         ScrollPane responseScrollPane =
-                new ScrollPane(responseContent);
+                new ScrollPane(responseInspector);
 
         responseScrollPane.setFitToWidth(true);
         responseScrollPane.setFitToHeight(true);
@@ -246,40 +188,16 @@ public final class RequestBuilderView extends BorderPane {
                 requestBody.getText();
 
         if (url.isEmpty()) {
-            responseStatus.setText(
-                    "Status: Enter a URL"
+            responseInspector.displayValidationError(
+                    "Enter a URL"
             );
-
-            responseTiming.setText(
-                    "Time: -"
-            );
-
-            responseSize.setText(
-                    "Size: -"
-            );
-
-            responseHeaders.clear();
-            responseBody.clear();
 
             return;
         }
 
         sendButton.setDisable(true);
 
-        responseStatus.setText(
-                "Status: Sending..."
-        );
-
-        responseTiming.setText(
-                "Time: -"
-        );
-
-        responseSize.setText(
-                "Size: -"
-        );
-
-        responseHeaders.clear();
-        responseBody.clear();
+        responseInspector.displaySending();
 
         Map<String, String> queryParameters =
                 queryParametersEditor.getValues();
@@ -306,102 +224,28 @@ public final class RequestBuilderView extends BorderPane {
                         );
 
                 Platform.runLater(
-                        () -> displayResponse(response)
+                        () -> {
+                            responseInspector
+                                    .displayResponse(
+                                            response
+                                    );
+
+                            sendButton.setDisable(false);
+                        }
                 );
 
             } catch (RuntimeException exception) {
                 Platform.runLater(
-                        () -> displayError(exception)
+                        () -> {
+                            responseInspector
+                                    .displayError(
+                                            exception
+                                    );
+
+                            sendButton.setDisable(false);
+                        }
                 );
             }
         });
-    }
-
-    private void displayResponse(
-            HttpResponse response
-    ) {
-        responseStatus.setText(
-                "Status: "
-                        + response.statusCode()
-        );
-
-        responseTiming.setText(
-                "Time: "
-                        + response.elapsedMilliseconds()
-                        + " ms"
-        );
-
-        responseSize.setText(
-                "Size: "
-                        + response.sizeBytes()
-                        + " bytes"
-        );
-
-        responseHeaders.setText(
-                formatHeaders(
-                        response.headers()
-                )
-        );
-
-        responseBody.setText(
-                response.body() == null
-                        ? ""
-                        : response.body()
-        );
-
-        sendButton.setDisable(false);
-    }
-
-    private void displayError(
-            RuntimeException exception
-    ) {
-        responseStatus.setText(
-                "Status: Request failed"
-        );
-
-        responseTiming.setText(
-                "Time: -"
-        );
-
-        responseSize.setText(
-                "Size: -"
-        );
-
-        responseHeaders.clear();
-
-        String message =
-                exception.getMessage();
-
-        responseBody.setText(
-                message == null
-                        ? exception.toString()
-                        : message
-        );
-
-        sendButton.setDisable(false);
-    }
-
-    private String formatHeaders(
-            Map<String, String> headers
-    ) {
-        if (headers.isEmpty()) {
-            return "";
-        }
-
-        StringBuilder formattedHeaders =
-                new StringBuilder();
-
-        headers.forEach(
-                (name, value) ->
-                        formattedHeaders
-                                .append(name)
-                                .append(": ")
-                                .append(value)
-                                .append(
-                                        System.lineSeparator()
-                                )
-        );
-
-        return formattedHeaders.toString();
     }
 }
