@@ -21,6 +21,9 @@ public final class ResponseInspector extends VBox {
     private final Label responseSize =
             new Label("Size: -");
 
+    private final Label responseUrl =
+            new Label("URL: -");
+
     private final TextArea responseHeaders =
             new TextArea();
 
@@ -42,6 +45,8 @@ public final class ResponseInspector extends VBox {
 
         responseBody.setEditable(false);
         responseBody.setWrapText(true);
+
+        responseUrl.setWrapText(true);
     }
 
     private void buildLayout() {
@@ -78,6 +83,7 @@ public final class ResponseInspector extends VBox {
         getChildren().addAll(
                 new Label("Response"),
                 responseMeta,
+                responseUrl,
                 responseHeaderSection,
                 new Label("Body"),
                 responseBody
@@ -97,6 +103,10 @@ public final class ResponseInspector extends VBox {
                 "Size: -"
         );
 
+        responseUrl.setText(
+                "URL: -"
+        );
+
         responseHeaders.clear();
         responseBody.clear();
     }
@@ -114,6 +124,10 @@ public final class ResponseInspector extends VBox {
 
         responseSize.setText(
                 "Size: -"
+        );
+
+        responseUrl.setText(
+                "URL: -"
         );
 
         responseHeaders.clear();
@@ -138,6 +152,11 @@ public final class ResponseInspector extends VBox {
                 "Size: "
                         + response.sizeBytes()
                         + " bytes"
+        );
+
+        responseUrl.setText(
+                "URL: "
+                        + response.url()
         );
 
         responseHeaders.setText(
@@ -168,6 +187,10 @@ public final class ResponseInspector extends VBox {
                 "Size: -"
         );
 
+        responseUrl.setText(
+                "URL: -"
+        );
+
         responseHeaders.clear();
 
         String message =
@@ -184,6 +207,7 @@ public final class ResponseInspector extends VBox {
         responseStatus.setText("Status: -");
         responseTiming.setText("Time: -");
         responseSize.setText("Size: -");
+        responseUrl.setText("URL: -");
         responseHeaders.clear();
         responseBody.clear();
     }
