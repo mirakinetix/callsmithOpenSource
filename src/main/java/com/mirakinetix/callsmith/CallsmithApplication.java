@@ -6,20 +6,38 @@ import com.mirakinetix.callsmith.ui.MainWindow;
 import javafx.application.Application;
 import javafx.stage.Stage;
 
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+
 public class CallsmithApplication extends Application {
 
-    private HttpRequestService httpRequestService;
+    private ExecutorService requestExecutor;
 
     @Override
     public void start(Stage stage) {
-        JavaHttpRequestExecutor requestExecutor =
+        JavaHttpRequestExecutor httpRequestExecutor =
                 new JavaHttpRequestExecutor();
 
-        httpRequestService =
-                new HttpRequestService(requestExecutor);
+        HttpRequestService httpRequestService =
+                new HttpRequestService(httpRequestExecutor);
 
-        MainWindow mainWindow = new MainWindow();
+        requestExecutor =
+                Executors.newVirtualThreadPerTaskExecutor();
+
+        MainWindow mainWindow =
+                new MainWindow(
+                        httpRequestService,
+                        requestExecutor
+                );
+
         mainWindow.show(stage);
+    }
+
+    @Override
+    public void stop() {
+        if (requestExecutor != null) {
+            requestExecutor.close();
+        }
     }
 
     public static void main(String[] args) {
