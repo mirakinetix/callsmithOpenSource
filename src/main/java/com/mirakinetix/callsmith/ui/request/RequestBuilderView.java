@@ -5,6 +5,7 @@ import com.mirakinetix.callsmith.application.http.HttpRequestService;
 import com.mirakinetix.callsmith.domain.environment.Environment;
 import com.mirakinetix.callsmith.domain.http.HttpRequest;
 import com.mirakinetix.callsmith.domain.http.HttpResponse;
+import com.mirakinetix.callsmith.ui.Icon;
 import com.mirakinetix.callsmith.ui.IconView;
 import com.mirakinetix.callsmith.ui.response.ResponseInspector;
 import javafx.application.Platform;
@@ -44,7 +45,10 @@ public final class RequestBuilderView extends BorderPane {
     private final Button sendButton =
             new Button(
                     "Send",
-                    new IconView("send", 16)
+                    new IconView(
+                            Icon.SEND,
+                            16
+                    )
             );
 
     private final KeyValueEditor queryParametersEditor =
@@ -204,7 +208,7 @@ public final class RequestBuilderView extends BorderPane {
                 new Label(
                         "Environment",
                         new IconView(
-                                "environment",
+                                Icon.ENVIRONMENT,
                                 16
                         )
                 );
