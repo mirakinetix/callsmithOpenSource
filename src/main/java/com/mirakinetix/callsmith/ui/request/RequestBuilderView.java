@@ -1,10 +1,13 @@
 package com.mirakinetix.callsmith.ui.request;
 
 import com.mirakinetix.callsmith.application.environment.EnvironmentService;
+import com.mirakinetix.callsmith.application.environment.EnvironmentVariableService;
 import com.mirakinetix.callsmith.application.http.HttpRequestService;
 import com.mirakinetix.callsmith.domain.environment.Environment;
+import com.mirakinetix.callsmith.domain.environment.EnvironmentVariable;
 import com.mirakinetix.callsmith.domain.http.HttpRequest;
 import com.mirakinetix.callsmith.domain.http.HttpResponse;
+import com.mirakinetix.callsmith.domain.request.SavedRequest;
 import com.mirakinetix.callsmith.ui.Icon;
 import com.mirakinetix.callsmith.ui.IconView;
 import com.mirakinetix.callsmith.ui.response.ResponseInspector;
@@ -31,6 +34,7 @@ public final class RequestBuilderView extends BorderPane {
 
     private final HttpRequestService httpRequestService;
     private final EnvironmentService environmentService;
+    private final EnvironmentVariableService environmentVariableService;
     private final ExecutorService requestExecutor;
 
     private final ComboBox<String> methodSelector =
@@ -51,6 +55,17 @@ public final class RequestBuilderView extends BorderPane {
                     )
             );
 
+    private final Button manageEnvironmentsButton =
+            new Button(
+                    "Manage",
+                    new IconView(
+                            Icon.SETTINGS,
+                            14
+                    )
+            );
+
+    private Runnable manageEnvironmentsAction;
+
     private final KeyValueEditor queryParametersEditor =
             new KeyValueEditor(
                     "Parameter name",
@@ -69,19 +84,19 @@ public final class RequestBuilderView extends BorderPane {
     private final ResponseInspector responseInspector =
             new ResponseInspector();
 
+    private final VBox variablesPanel =
+            new VBox(4);
+
     public RequestBuilderView(
             HttpRequestService httpRequestService,
             EnvironmentService environmentService,
+            EnvironmentVariableService environmentVariableService,
             ExecutorService requestExecutor
     ) {
-        this.httpRequestService =
-                httpRequestService;
-
-        this.environmentService =
-                environmentService;
-
-        this.requestExecutor =
-                requestExecutor;
+        this.httpRequestService = httpRequestService;
+        this.environmentService = environmentService;
+        this.environmentVariableService = environmentVariableService;
+        this.requestExecutor = requestExecutor;
 
         configureControls();
         loadEnvironments();
@@ -99,7 +114,9 @@ public final class RequestBuilderView extends BorderPane {
                 "OPTIONS"
         );
 
-        methodSelector.getSelectionModel().select("GET");
+        methodSelector
+                .getSelectionModel()
+                .select("GET");
 
         environmentSelector.setPromptText(
                 "Environment"
@@ -109,6 +126,14 @@ public final class RequestBuilderView extends BorderPane {
 
         environmentSelector.setOnAction(
                 event -> updateActiveEnvironment()
+        );
+
+        manageEnvironmentsButton.setOnAction(
+                event -> {
+                    if (manageEnvironmentsAction != null) {
+                        manageEnvironmentsAction.run();
+                    }
+                }
         );
 
         urlField.setPromptText(
@@ -123,6 +148,16 @@ public final class RequestBuilderView extends BorderPane {
 
         sendButton.setOnAction(
                 event -> executeRequest()
+        );
+
+        variablesPanel.setPadding(
+                new Insets(8)
+        );
+
+        variablesPanel.setStyle(
+                "-fx-border-color: #d0d0d0;" +
+                "-fx-border-radius: 4;" +
+                "-fx-background-radius: 4;"
         );
     }
 
@@ -154,11 +189,26 @@ public final class RequestBuilderView extends BorderPane {
                     activeEnvironment.get().id()
             );
 
+            refreshVariables(
+                    activeEnvironment.get().id()
+            );
         } else {
             environmentSelector
                     .getSelectionModel()
                     .selectFirst();
+
+            refreshVariables(null);
         }
+    }
+
+    public void refreshEnvironments() {
+        loadEnvironments();
+    }
+
+    public void setManageEnvironmentsAction(
+            Runnable action
+    ) {
+        this.manageEnvironmentsAction = action;
     }
 
     private void selectEnvironment(
@@ -195,12 +245,97 @@ public final class RequestBuilderView extends BorderPane {
 
         if (selected.environmentId().isBlank()) {
             environmentService.clearActive();
+            refreshVariables(null);
             return;
         }
 
         environmentService.setActive(
                 selected.environmentId()
         );
+
+        refreshVariables(
+                selected.environmentId()
+        );
+    }
+
+    private void refreshVariables(
+            String environmentId
+    ) {
+        variablesPanel.getChildren().clear();
+
+        Label title =
+                new Label("Variables");
+
+        title.setStyle(
+                "-fx-font-weight: bold;"
+        );
+
+        variablesPanel.getChildren().add(
+                title
+        );
+
+        if (environmentId == null
+                || environmentId.isBlank()) {
+
+            variablesPanel.getChildren().add(
+                    new Label("No environment selected")
+            );
+
+            return;
+        }
+
+        List<EnvironmentVariable> variables =
+                environmentVariableService
+                        .findByEnvironmentId(
+                                environmentId
+                        );
+
+        if (variables.isEmpty()) {
+            variablesPanel.getChildren().add(
+                    new Label("No variables defined")
+            );
+
+            return;
+        }
+
+        for (EnvironmentVariable variable :
+                variables) {
+
+            HBox row =
+                    new HBox(8);
+
+            Label name =
+                    new Label(
+                            "{{" + variable.name() + "}}"
+                    );
+
+            name.setMinWidth(180);
+
+            Label value =
+                    new Label(
+                            variable.secret()
+                                    ? "********"
+                                    : variable.value()
+                    );
+
+            value.setMaxWidth(
+                    Double.MAX_VALUE
+            );
+
+            HBox.setHgrow(
+                    value,
+                    Priority.ALWAYS
+            );
+
+            row.getChildren().addAll(
+                    name,
+                    value
+            );
+
+            variablesPanel.getChildren().add(
+                    row
+            );
+        }
     }
 
     private void buildLayout() {
@@ -217,8 +352,14 @@ public final class RequestBuilderView extends BorderPane {
                 new HBox(
                         8,
                         environmentLabel,
-                        environmentSelector
+                        environmentSelector,
+                        manageEnvironmentsButton
                 );
+
+        HBox.setHgrow(
+                environmentSelector,
+                Priority.ALWAYS
+        );
 
         HBox requestBar =
                 new HBox(
@@ -233,9 +374,18 @@ public final class RequestBuilderView extends BorderPane {
                 Priority.ALWAYS
         );
 
+        HBox requestContentTitle =
+                new HBox(
+                        8,
+                        new Label("Request")
+                );
+
         VBox requestContent =
                 new VBox(
                         8,
+                        requestContentTitle,
+                        requestBar,
+                        variablesPanel,
                         new Label("Query Parameters"),
                         queryParametersEditor,
                         new Label("Headers"),
@@ -263,8 +413,6 @@ public final class RequestBuilderView extends BorderPane {
                 new VBox(
                         8,
                         environmentBar,
-                        new Label("Request"),
-                        requestBar,
                         requestScrollPane
                 );
 
@@ -302,7 +450,49 @@ public final class RequestBuilderView extends BorderPane {
                 0.5
         );
 
-        setCenter(requestResponsePane);
+        setCenter(
+                requestResponsePane
+        );
+    }
+
+    public void loadRequest(
+            SavedRequest request
+    ) {
+        if (request == null) {
+            throw new IllegalArgumentException(
+                    "Saved request is required"
+            );
+        }
+
+        methodSelector.setValue(
+                request.method()
+        );
+
+        urlField.setText(
+                request.url()
+        );
+
+        queryParametersEditor.setValues(
+                request.queryParameters()
+        );
+
+        headersEditor.setValues(
+                request.headers()
+        );
+
+        requestBody.setText(
+                request.body() == null
+                        ? ""
+                        : request.body()
+        );
+
+        responseInspector.clear();
+    }
+
+    public void loadSavedRequest(
+            SavedRequest request
+    ) {
+        loadRequest(request);
     }
 
     private void executeRequest() {
@@ -347,38 +537,44 @@ public final class RequestBuilderView extends BorderPane {
         String environmentId =
                 getSelectedEnvironmentId();
 
-        requestExecutor.submit(() -> {
-            try {
-                HttpResponse response =
-                        httpRequestService.execute(
-                                request,
-                                environmentId
+        requestExecutor.submit(
+                () -> {
+                    try {
+                        HttpResponse response =
+                                httpRequestService.execute(
+                                        request,
+                                        environmentId
+                                );
+
+                        Platform.runLater(
+                                () -> {
+                                    responseInspector
+                                            .displayResponse(
+                                                    response
+                                            );
+
+                                    sendButton.setDisable(
+                                            false
+                                    );
+                                }
                         );
 
-                Platform.runLater(
-                        () -> {
-                            responseInspector
-                                    .displayResponse(
-                                            response
+                    } catch (RuntimeException exception) {
+                        Platform.runLater(
+                                () -> {
+                                    responseInspector
+                                            .displayError(
+                                                    exception
+                                            );
+
+                                    sendButton.setDisable(
+                                            false
                                     );
-
-                            sendButton.setDisable(false);
-                        }
-                );
-
-            } catch (RuntimeException exception) {
-                Platform.runLater(
-                        () -> {
-                            responseInspector
-                                    .displayError(
-                                            exception
-                                    );
-
-                            sendButton.setDisable(false);
-                        }
-                );
-            }
-        });
+                                }
+                        );
+                    }
+                }
+        );
     }
 
     private String getSelectedEnvironmentId() {
