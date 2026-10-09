@@ -1,0 +1,39 @@
+﻿name: Package Callsmith for Windows
+
+on:
+  workflow_dispatch:
+
+jobs:
+  package-windows:
+    name: Windows x64 application image
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@v4
+
+      - name: Set up Java 25
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '25'
+          cache: maven
+
+      - name: Verify build environment
+        shell: pwsh
+        run: |
+          java --version
+          javac --version
+          jpackage --version
+          jlink --version
+
+      - name: Build Windows application image
+        shell: pwsh
+        run: .\packaging\windows\build-app-image.ps1
+
+      - name: Upload Windows application image
+        uses: actions/upload-artifact@v4
+        with:
+          name: Callsmith-0.1.0-windows-x64
+          path: packaging/windows/build/dist/Callsmith/
+          if-no-files-found: error
