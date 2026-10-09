@@ -1,4 +1,4 @@
-﻿#!/bin/bash
+#!/bin/bash
 
 set -euo pipefail
 
@@ -13,7 +13,7 @@ RUNTIME_IMAGE="$PACKAGING_ROOT/runtime"
 OUTPUT_DIR="$PACKAGING_ROOT/dist"
 
 APP_NAME="Callsmith"
-APP_VERSION="0.1.1"
+APP_VERSION="1.0.0"
 MAIN_JAR="callsmith-${APP_VERSION}.jar"
 MAIN_CLASS="com.mirakinetix.callsmith.CallsmithApplication"
 

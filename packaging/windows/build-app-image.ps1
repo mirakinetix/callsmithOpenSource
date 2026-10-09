@@ -1,4 +1,4 @@
-﻿$ErrorActionPreference = "Stop"
+$ErrorActionPreference = "Stop"
 
 $ProjectRoot = Resolve-Path (Join-Path $PSScriptRoot "..\..")
 $TargetDir = Join-Path $ProjectRoot "target"
@@ -11,7 +11,7 @@ $RuntimeImage = Join-Path $PackagingRoot "runtime"
 $OutputDir = Join-Path $PackagingRoot "dist"
 
 $AppName = "Callsmith"
-$AppVersion = "0.1.1"
+$AppVersion = "1.0.0"
 $MainJar = "callsmith-$AppVersion.jar"
 $MainClass = "com.mirakinetix.callsmith.CallsmithApplication"
 

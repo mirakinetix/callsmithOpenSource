@@ -1,4 +1,4 @@
-﻿name: Package Callsmith for Windows
+name: Package Callsmith for Windows
 
 on:
   workflow_dispatch:
@@ -34,6 +34,6 @@ jobs:
       - name: Upload Windows application image
         uses: actions/upload-artifact@v4
         with:
-          name: Callsmith-0.1.1-windows-x64
+          name: Callsmith-1.0.0-windows-x64
           path: packaging/windows/build/dist/Callsmith/
           if-no-files-found: error

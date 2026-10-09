@@ -1,4 +1,4 @@
-﻿name: Package Callsmith for macOS
+name: Package Callsmith for macOS
 
 on:
   workflow_dispatch:
@@ -48,6 +48,6 @@ jobs:
       - name: Upload macOS DMG
         uses: actions/upload-artifact@v4
         with:
-          name: Callsmith-0.1.1-macos-${{ matrix.architecture }}
-          path: packaging/macos/build/dist/Callsmith-0.1.1.dmg
+          name: Callsmith-1.0.0-macos-${{ matrix.architecture }}
+          path: packaging/macos/build/dist/Callsmith-1.0.0.dmg
           if-no-files-found: error
