@@ -1,0 +1,53 @@
+name: Package Callsmith for macOS
+
+on:
+  workflow_dispatch:
+
+jobs:
+
+  package-macos:
+    name: macOS ${{ matrix.architecture }}
+    runs-on: ${{ matrix.runner }}
+
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - architecture: arm64
+            runner: macos-14
+
+          - architecture: x64
+            runner: macos-15-intel
+
+    steps:
+
+      - name: Checkout source
+        uses: actions/checkout@v4
+
+      - name: Set up Java 25
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '25'
+          cache: maven
+
+      - name: Verify build environment
+        run: |
+          java --version
+          javac --version
+          jpackage --version
+          jlink --version
+          uname -m
+
+      - name: Make packaging script executable
+        run: chmod +x packaging/macos/build-app-image.sh
+
+      - name: Build macOS package
+        run: ./packaging/macos/build-app-image.sh
+
+      - name: Upload macOS DMG
+        uses: actions/upload-artifact@v4
+        with:
+          name: Callsmith-0.1.0-macos-${{ matrix.architecture }}
+          path: packaging/macos/build/dist/Callsmith-0.1.0.dmg
+          if-no-files-found: error
