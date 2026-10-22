@@ -116,6 +116,10 @@ public final class EnvironmentManager {
                         HEIGHT
                 );
 
+        scene.getStylesheets().add(
+            EnvironmentManager.class.getResource("/styles/brand.css").toExternalForm()
+        );
+
         stage.setScene(scene);
 
         loadEnvironments();
@@ -540,6 +544,8 @@ public final class EnvironmentManager {
         Dialog<ButtonType> dialog =
                 new Dialog<>();
 
+        applyBrandStyles(dialog);
+
         dialog.setTitle(
                 "Create Environment"
         );
@@ -653,6 +659,8 @@ public final class EnvironmentManager {
         Dialog<ButtonType> dialog =
                 new Dialog<>();
 
+        applyBrandStyles(dialog);
+
         dialog.setTitle(
                 "Rename Environment"
         );
@@ -758,6 +766,8 @@ public final class EnvironmentManager {
                 new Alert(
                         Alert.AlertType.CONFIRMATION
                 );
+
+        applyBrandStyles(confirmation);
 
         confirmation.setTitle(
                 "Delete Environment"
@@ -891,6 +901,8 @@ public final class EnvironmentManager {
                         Alert.AlertType.CONFIRMATION
                 );
 
+        applyBrandStyles(confirmation);
+
         confirmation.setTitle(
                 "Delete Variable"
         );
@@ -931,277 +943,279 @@ public final class EnvironmentManager {
     }
 
     private void showVariableDialog(
-        Environment environment,
-        EnvironmentVariable existing
-) {
-    TextField nameField =
-            new TextField(
-                    existing == null
-                            ? ""
-                            : existing.name()
-            );
-
-    TextField normalValueField =
-            new TextField();
-
-    PasswordField secretValueField =
-            new PasswordField();
-
-    String initialValue =
-            existing == null
-                    ? ""
-                    : existing.value();
-
-    normalValueField.setText(
-            initialValue
-    );
-
-    secretValueField.setText(
-            initialValue
-    );
-
-    CheckBox secretCheckBox =
-            new CheckBox(
-                    "Secret"
-            );
-
-    secretCheckBox.setSelected(
-            existing != null
-                    && existing.secret()
-    );
-
-    StackPane valueContainer =
-            new StackPane(
-                    normalValueField,
-                    secretValueField
-            );
-
-    normalValueField.setVisible(
-            !secretCheckBox.isSelected()
-    );
-
-    normalValueField.setManaged(
-            !secretCheckBox.isSelected()
-    );
-
-    secretValueField.setVisible(
-            secretCheckBox.isSelected()
-    );
-
-    secretValueField.setManaged(
-            secretCheckBox.isSelected()
-    );
-
-    GridPane content =
-            createFormGrid();
-
-    content.add(
-            new Label("Name:"),
-            0,
-            0
-    );
-
-    content.add(
-            nameField,
-            1,
-            0
-    );
-
-    content.add(
-            new Label("Value:"),
-            0,
-            1
-    );
-
-    content.add(
-            valueContainer,
-            1,
-            1
-    );
-
-    content.add(
-            secretCheckBox,
-            1,
-            2
-    );
-
-    GridPane.setHgrow(
-            nameField,
-            Priority.ALWAYS
-    );
-
-    GridPane.setHgrow(
-            valueContainer,
-            Priority.ALWAYS
-    );
-
-    secretCheckBox.setOnAction(
-            event -> {
-                boolean secret =
-                        secretCheckBox.isSelected();
-
-                String currentValue =
-                        secret
-                                ? normalValueField
-                                        .getText()
-                                : secretValueField
-                                        .getText();
-
-                normalValueField.setText(
-                        currentValue
+            Environment environment,
+            EnvironmentVariable existing
+    ) {
+        TextField nameField =
+                new TextField(
+                        existing == null
+                                ? ""
+                                : existing.name()
                 );
 
-                secretValueField.setText(
-                        currentValue
+        TextField normalValueField =
+                new TextField();
+
+        PasswordField secretValueField =
+                new PasswordField();
+
+        String initialValue =
+                existing == null
+                        ? ""
+                        : existing.value();
+
+        normalValueField.setText(
+                initialValue
+        );
+
+        secretValueField.setText(
+                initialValue
+        );
+
+        CheckBox secretCheckBox =
+                new CheckBox(
+                        "Secret"
                 );
 
-                normalValueField.setVisible(
-                        !secret
+        secretCheckBox.setSelected(
+                existing != null
+                        && existing.secret()
+        );
+
+        StackPane valueContainer =
+                new StackPane(
+                        normalValueField,
+                        secretValueField
                 );
 
-                normalValueField.setManaged(
-                        !secret
-                );
+        normalValueField.setVisible(
+                !secretCheckBox.isSelected()
+        );
 
-                secretValueField.setVisible(
-                        secret
-                );
+        normalValueField.setManaged(
+                !secretCheckBox.isSelected()
+        );
 
-                secretValueField.setManaged(
-                        secret
-                );
-            }
-    );
+        secretValueField.setVisible(
+                secretCheckBox.isSelected()
+        );
 
-    Dialog<ButtonType> dialog =
-            new Dialog<>();
+        secretValueField.setManaged(
+                secretCheckBox.isSelected()
+        );
 
-    dialog.setTitle(
-            existing == null
-                    ? "Add Variable"
-                    : "Edit Variable"
-    );
+        GridPane content =
+                createFormGrid();
 
-    dialog.setHeaderText(
-            existing == null
-                    ? "Add variable to "
-                            + environment.name()
-                    : "Edit variable "
-                            + existing.name()
-    );
+        content.add(
+                new Label("Name:"),
+                0,
+                0
+        );
 
-    dialog.getDialogPane()
-            .getButtonTypes()
-            .addAll(
-                    ButtonType.OK,
-                    ButtonType.CANCEL
-            );
+        content.add(
+                nameField,
+                1,
+                0
+        );
 
-    dialog.getDialogPane()
-            .setContent(
-                    content
-            );
+        content.add(
+                new Label("Value:"),
+                0,
+                1
+        );
 
-    javafx.scene.Node okButton =
-            dialog.getDialogPane()
-                    .lookupButton(ButtonType.OK);
+        content.add(
+                valueContainer,
+                1,
+                1
+        );
 
-    okButton.addEventFilter(
-            javafx.event.ActionEvent.ACTION,
-            event -> {
-                String name =
-                        nameField
-                                .getText()
-                                .trim();
+        content.add(
+                secretCheckBox,
+                1,
+                2
+        );
 
-                if (isDuplicateVariableName(
-                        environment.id(),
-                        name,
-                        existing
-                )) {
-                    showError(
-                            "A variable with the name \""
-                                    + name
-                                    + "\" already exists in this environment."
+        GridPane.setHgrow(
+                nameField,
+                Priority.ALWAYS
+        );
+
+        GridPane.setHgrow(
+                valueContainer,
+                Priority.ALWAYS
+        );
+
+        secretCheckBox.setOnAction(
+                event -> {
+                    boolean secret =
+                            secretCheckBox.isSelected();
+
+                    String currentValue =
+                            secret
+                                    ? normalValueField
+                                            .getText()
+                                    : secretValueField
+                                            .getText();
+
+                    normalValueField.setText(
+                            currentValue
                     );
 
-                    event.consume();
+                    secretValueField.setText(
+                            currentValue
+                    );
+
+                    normalValueField.setVisible(
+                            !secret
+                    );
+
+                    normalValueField.setManaged(
+                            !secret
+                    );
+
+                    secretValueField.setVisible(
+                            secret
+                    );
+
+                    secretValueField.setManaged(
+                            secret
+                    );
                 }
-            }
-    );
+        );
 
-    dialog.showAndWait()
-            .filter(
-                    result ->
-                            result == ButtonType.OK
-            )
-            .ifPresent(
-                    result -> {
-                        String name =
-                                nameField
-                                        .getText()
-                                        .trim();
+        Dialog<ButtonType> dialog =
+                new Dialog<>();
 
-                        String value =
-                                secretCheckBox.isSelected()
-                                        ? secretValueField
-                                                .getText()
-                                        : normalValueField
-                                                .getText();
+        applyBrandStyles(dialog);
 
-                        if (name.isBlank()) {
-                            showError(
-                                    "Variable name cannot be empty."
-                            );
-                            return;
-                        }
+        dialog.setTitle(
+                existing == null
+                        ? "Add Variable"
+                        : "Edit Variable"
+        );
 
-                        Instant now =
-                                Instant.now();
+        dialog.setHeaderText(
+                existing == null
+                        ? "Add variable to "
+                                + environment.name()
+                        : "Edit variable "
+                                + existing.name()
+        );
 
-                        EnvironmentVariable variable =
-                                existing == null
-                                        ? new EnvironmentVariable(
-                                                UUID.randomUUID()
-                                                        .toString(),
-                                                environment.id(),
-                                                name,
-                                                value,
-                                                secretCheckBox
-                                                        .isSelected(),
-                                                now,
-                                                now
-                                        )
-                                        : new EnvironmentVariable(
-                                                existing.id(),
-                                                environment.id(),
-                                                name,
-                                                value,
-                                                secretCheckBox
-                                                        .isSelected(),
-                                                existing.createdAt(),
-                                                now
-                                        );
+        dialog.getDialogPane()
+                .getButtonTypes()
+                .addAll(
+                        ButtonType.OK,
+                        ButtonType.CANCEL
+                );
 
-                        try {
-                            variableService.save(
-                                    variable
-                            );
+        dialog.getDialogPane()
+                .setContent(
+                        content
+                );
 
-                            loadVariables(
-                                    environment
-                            );
+        javafx.scene.Node okButton =
+                dialog.getDialogPane()
+                        .lookupButton(ButtonType.OK);
 
-                            onChanged.run();
-                        } catch (RuntimeException exception) {
-                            showError(
-                                    "Unable to save variable:\n"
-                                            + exception.getMessage()
-                            );
-                        }
+        okButton.addEventFilter(
+                javafx.event.ActionEvent.ACTION,
+                event -> {
+                    String name =
+                            nameField
+                                    .getText()
+                                    .trim();
+
+                    if (isDuplicateVariableName(
+                            environment.id(),
+                            name,
+                            existing
+                    )) {
+                        showError(
+                                "A variable with the name \""
+                                        + name
+                                        + "\" already exists in this environment."
+                        );
+
+                        event.consume();
                     }
-            );
-}
+                }
+        );
+
+        dialog.showAndWait()
+                .filter(
+                        result ->
+                                result == ButtonType.OK
+                )
+                .ifPresent(
+                        result -> {
+                            String name =
+                                    nameField
+                                            .getText()
+                                            .trim();
+
+                            String value =
+                                    secretCheckBox.isSelected()
+                                            ? secretValueField
+                                                    .getText()
+                                            : normalValueField
+                                                    .getText();
+
+                            if (name.isBlank()) {
+                                showError(
+                                        "Variable name cannot be empty."
+                                );
+                                return;
+                            }
+
+                            Instant now =
+                                    Instant.now();
+
+                            EnvironmentVariable variable =
+                                    existing == null
+                                            ? new EnvironmentVariable(
+                                                    UUID.randomUUID()
+                                                            .toString(),
+                                                    environment.id(),
+                                                    name,
+                                                    value,
+                                                    secretCheckBox
+                                                            .isSelected(),
+                                                    now,
+                                                    now
+                                            )
+                                            : new EnvironmentVariable(
+                                                    existing.id(),
+                                                    environment.id(),
+                                                    name,
+                                                    value,
+                                                    secretCheckBox
+                                                            .isSelected(),
+                                                    existing.createdAt(),
+                                                    now
+                                            );
+
+                            try {
+                                variableService.save(
+                                        variable
+                                );
+
+                                loadVariables(
+                                        environment
+                                );
+
+                                onChanged.run();
+                            } catch (RuntimeException exception) {
+                                showError(
+                                        "Unable to save variable:\n"
+                                                + exception.getMessage()
+                                );
+                            }
+                        }
+                );
+    }
 
     private boolean isDuplicateVariableName(
             String environmentId,
@@ -1283,6 +1297,18 @@ public final class EnvironmentManager {
         return button;
     }
 
+    private void applyBrandStyles(
+            Dialog<?> dialog
+    ) {
+        dialog.getDialogPane()
+                .getStylesheets()
+                .add(
+                        EnvironmentManager.class
+                                .getResource("/styles/brand.css")
+                                .toExternalForm()
+                );
+    }
+
     private void showError(
             String message
     ) {
@@ -1290,6 +1316,8 @@ public final class EnvironmentManager {
                 new Alert(
                         Alert.AlertType.ERROR
                 );
+
+        applyBrandStyles(alert);
 
         alert.setTitle(
                 "Callsmith"

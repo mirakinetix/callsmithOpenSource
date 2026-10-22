@@ -248,6 +248,8 @@ public final class KeyValueEditor extends VBox {
                         Alert.AlertType.CONFIRMATION
                 );
 
+        applyBrandStyles(confirmation);
+
         confirmation.setTitle(
                 "Delete " + itemName
         );
@@ -285,6 +287,8 @@ public final class KeyValueEditor extends VBox {
 
         Dialog<KeyValue> dialog =
                 new Dialog<>();
+
+        applyBrandStyles(dialog);
 
         dialog.setTitle(
                 editing
@@ -671,6 +675,18 @@ public final class KeyValueEditor extends VBox {
                 .toLowerCase();
     }
 
+    private void applyBrandStyles(
+            Dialog<?> dialog
+    ) {
+        dialog.getDialogPane()
+                .getStylesheets()
+                .add(
+                        KeyValueEditor.class
+                                .getResource("/styles/brand.css")
+                                .toExternalForm()
+                );
+    }
+
     private void showDuplicateWarning(
             String key
     ) {
@@ -679,6 +695,8 @@ public final class KeyValueEditor extends VBox {
                 new Alert(
                         Alert.AlertType.WARNING
                 );
+
+        applyBrandStyles(alert);
 
         alert.setTitle(
                 "Duplicate " + itemName

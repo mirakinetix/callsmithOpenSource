@@ -1,5 +1,6 @@
 package com.mirakinetix.callsmith.ui.collection;
 
+import com.mirakinetix.callsmith.application.collection.CollectionExportService;
 import com.mirakinetix.callsmith.application.collection.CollectionWorkspaceService;
 import com.mirakinetix.callsmith.application.collection.importation.CollectionImportPersistenceService;
 import com.mirakinetix.callsmith.application.collection.importation.CollectionImportService;
@@ -9,6 +10,7 @@ import com.mirakinetix.callsmith.domain.collection.importation.ImportedCollectio
 import com.mirakinetix.callsmith.domain.request.SavedRequest;
 import com.mirakinetix.callsmith.ui.Icon;
 import com.mirakinetix.callsmith.ui.IconView;
+import javafx.event.ActionEvent;
 import javafx.geometry.Insets;
 import javafx.scene.control.Alert;
 import javafx.scene.control.Button;
@@ -16,13 +18,14 @@ import javafx.scene.control.ButtonType;
 import javafx.scene.control.Dialog;
 import javafx.scene.control.Label;
 import javafx.scene.control.TextField;
+import javafx.scene.control.Tooltip;
 import javafx.scene.control.TreeCell;
 import javafx.scene.control.TreeItem;
 import javafx.scene.control.TreeView;
 import javafx.scene.layout.BorderPane;
 import javafx.scene.layout.GridPane;
-import javafx.scene.layout.HBox;
 import javafx.scene.layout.Priority;
+import javafx.scene.layout.VBox;
 import javafx.stage.FileChooser;
 import javafx.stage.Window;
 
@@ -39,6 +42,7 @@ public final class CollectionSidebar extends BorderPane {
     private static final double WIDTH = 280;
 
     private final CollectionWorkspaceService workspaceService;
+    private final CollectionExportService exportService;
     private final CollectionImportService importService;
     private final CollectionImportPersistenceService
             importPersistenceService;
@@ -49,6 +53,7 @@ public final class CollectionSidebar extends BorderPane {
 
     public CollectionSidebar(
             CollectionWorkspaceService workspaceService,
+            CollectionExportService exportService,
             CollectionImportService importService,
             CollectionImportPersistenceService
                     importPersistenceService,
@@ -57,6 +62,12 @@ public final class CollectionSidebar extends BorderPane {
         if (workspaceService == null) {
             throw new IllegalArgumentException(
                     "Collection workspace service is required"
+            );
+        }
+
+        if (exportService == null) {
+            throw new IllegalArgumentException(
+                    "Collection export service is required"
             );
         }
 
@@ -80,6 +91,9 @@ public final class CollectionSidebar extends BorderPane {
 
         this.workspaceService =
                 workspaceService;
+
+        this.exportService =
+                exportService;
 
         this.importService =
                 importService;
@@ -110,88 +124,92 @@ public final class CollectionSidebar extends BorderPane {
 
         title.setPadding(
                 new Insets(
-                        10,
-                        10,
                         8,
+                        10,
+                        4,
                         10
                 )
         );
 
         Button createButton =
-                new Button(
+                createActionButton(
                         "New",
-                        new IconView(
-                                Icon.ADD,
-                                16
-                        )
+                        Icon.ADD,
+                        "Create a collection",
+                        this::createCollection
                 );
-
-        createButton.setOnAction(
-                event -> createCollection()
-        );
 
         Button importButton =
-                new Button(
+                createActionButton(
                         "Import",
-                        new IconView(
-                                Icon.UPLOAD,
-                                16
-                        )
+                        Icon.UPLOAD,
+                        "Import a collection from a file",
+                        this::importCollection
                 );
 
-        importButton.setOnAction(
-                event -> importCollection()
-        );
+        Button exportButton =
+                createActionButton(
+                        "Export",
+                        Icon.DOWNLOAD,
+                        "Export the selected collection as Postman JSON",
+                        this::exportSelectedCollection
+                );
 
         Button renameButton =
-                new Button(
+                createActionButton(
                         "Rename",
-                        new IconView(
-                                Icon.EDIT,
-                                16
-                        )
+                        Icon.EDIT,
+                        "Rename the selected collection",
+                        this::renameSelectedCollection
                 );
-
-        renameButton.setOnAction(
-                event -> renameSelectedCollection()
-        );
 
         Button deleteButton =
-                new Button(
+                createActionButton(
                         "Delete",
-                        new IconView(
-                                Icon.DELETE,
-                                16
-                        )
+                        Icon.DELETE,
+                        "Delete the selected collection",
+                        this::deleteSelectedCollection
                 );
 
-        deleteButton.setOnAction(
-                event -> deleteSelectedCollection()
-        );
+        GridPane actions =
+                new GridPane();
 
-        HBox toolbar =
-                new HBox(
-                        6,
-                        title,
-                        createButton,
-                        importButton,
-                        renameButton,
-                        deleteButton
-                );
-
-        toolbar.setPadding(
+        actions.setHgap(6);
+        actions.setVgap(6);
+        actions.setPadding(
                 new Insets(
-                        8,
+                        4,
                         10,
                         8,
                         10
                 )
         );
 
-        HBox.setHgrow(
-                title,
-                Priority.ALWAYS
-        );
+        actions.add(createButton, 0, 0);
+        actions.add(importButton, 1, 0);
+        actions.add(exportButton, 0, 1);
+        actions.add(renameButton, 1, 1);
+        actions.add(deleteButton, 0, 2);
+
+        for (Button button :
+                List.of(
+                        createButton,
+                        importButton,
+                        exportButton,
+                        renameButton,
+                        deleteButton
+                )) {
+            button.setMaxWidth(Double.MAX_VALUE);
+            GridPane.setHgrow(button, Priority.ALWAYS);
+        }
+
+        GridPane.setHgrow(actions, Priority.ALWAYS);
+
+        VBox header =
+                new VBox(
+                        title,
+                        actions
+                );
 
         treeView.setShowRoot(false);
 
@@ -206,8 +224,34 @@ public final class CollectionSidebar extends BorderPane {
                                 handleSelection(newItem)
                 );
 
-        setTop(toolbar);
+        setTop(header);
         setCenter(treeView);
+    }
+
+    private Button createActionButton(
+            String text,
+            Icon icon,
+            String tooltipText,
+            Runnable action
+    ) {
+        Button button =
+                new Button(
+                        text,
+                        new IconView(
+                                icon,
+                                16
+                        )
+                );
+
+        button.setTooltip(
+                new Tooltip(tooltipText)
+        );
+
+        button.setOnAction(
+                event -> action.run()
+        );
+
+        return button;
     }
 
     private void loadCollections() {
@@ -262,6 +306,8 @@ public final class CollectionSidebar extends BorderPane {
         Dialog<ButtonType> dialog =
                 new Dialog<>();
 
+        applyBrandStyles(dialog);
+
         dialog.setTitle(
                 "Create Collection"
         );
@@ -302,7 +348,7 @@ public final class CollectionSidebar extends BorderPane {
                         );
 
         okButton.addEventFilter(
-                javafx.event.ActionEvent.ACTION,
+                ActionEvent.ACTION,
                 event -> {
                     String name =
                             nameField
@@ -376,6 +422,8 @@ public final class CollectionSidebar extends BorderPane {
         Dialog<ButtonType> dialog =
                 new Dialog<>();
 
+        applyBrandStyles(dialog);
+
         dialog.setTitle(
                 "Rename Collection"
         );
@@ -416,7 +464,7 @@ public final class CollectionSidebar extends BorderPane {
                         );
 
         okButton.addEventFilter(
-                javafx.event.ActionEvent.ACTION,
+                ActionEvent.ACTION,
                 event -> {
                     String name =
                             nameField
@@ -481,6 +529,8 @@ public final class CollectionSidebar extends BorderPane {
                         Alert.AlertType.CONFIRMATION
                 );
 
+        applyBrandStyles(confirmation);
+
         confirmation.setTitle(
                 "Delete Collection"
         );
@@ -517,6 +567,114 @@ public final class CollectionSidebar extends BorderPane {
                             loadCollections();
                         }
                 );
+    }
+
+    private void exportSelectedCollection() {
+        Collection collection =
+                getSelectedCollection();
+
+        if (collection == null) {
+            showError(
+                    "Export Collection",
+                    "Select a collection first."
+            );
+
+            return;
+        }
+
+        FileChooser fileChooser =
+                new FileChooser();
+
+        fileChooser.setTitle(
+                "Export Postman Collection"
+        );
+
+        fileChooser.setInitialFileName(
+                createExportFileName(
+                        collection.name()
+                )
+        );
+
+        fileChooser.getExtensionFilters().add(
+                new FileChooser.ExtensionFilter(
+                        "Postman Collection JSON",
+                        "*.json"
+                )
+        );
+
+        Window window =
+                getScene() == null
+                        ? null
+                        : getScene().getWindow();
+
+        File selectedFile =
+                fileChooser.showSaveDialog(window);
+
+        if (selectedFile == null) {
+            return;
+        }
+
+        File exportFile =
+                ensureJsonExtension(selectedFile);
+
+        try {
+            exportService.exportCollection(
+                    collection,
+                    exportFile.toPath()
+            );
+
+            showInformation(
+                    "Export successful",
+                    "Exported collection to:"
+                            + System.lineSeparator()
+                            + exportFile.getAbsolutePath()
+            );
+
+        } catch (RuntimeException exception) {
+            showError(
+                    "Export failed",
+                    exception.getMessage() == null
+                            ? exception.toString()
+                            : exception.getMessage()
+            );
+        }
+    }
+
+    private String createExportFileName(
+            String collectionName
+    ) {
+        String safeName =
+                collectionName == null
+                        ? ""
+                        : collectionName
+                                .replaceAll(
+                                        "[\\\\/:*?\"<>|]",
+                                        "_"
+                                )
+                                .trim();
+
+        if (safeName.isBlank()) {
+            safeName = "collection";
+        }
+
+        return safeName + ".postman_collection.json";
+    }
+
+    private File ensureJsonExtension(
+            File file
+    ) {
+        String fileName =
+                file.getName();
+
+        if (fileName.toLowerCase()
+                .endsWith(".json")) {
+            return file;
+        }
+
+        return new File(
+                file.getParentFile(),
+                fileName + ".json"
+        );
     }
 
     private Collection getSelectedCollection() {
@@ -735,6 +893,18 @@ public final class CollectionSidebar extends BorderPane {
         }
     }
 
+    private void applyBrandStyles(
+            Dialog<?> dialog
+    ) {
+        dialog.getDialogPane()
+                .getStylesheets()
+                .add(
+                        CollectionSidebar.class
+                                .getResource("/styles/brand.css")
+                                .toExternalForm()
+                );
+    }
+
     private void showInformation(
             String title,
             String message
@@ -743,6 +913,8 @@ public final class CollectionSidebar extends BorderPane {
                 new Alert(
                         Alert.AlertType.INFORMATION
                 );
+
+        applyBrandStyles(alert);
 
         alert.setTitle(title);
         alert.setHeaderText(null);
@@ -758,6 +930,8 @@ public final class CollectionSidebar extends BorderPane {
                 new Alert(
                         Alert.AlertType.ERROR
                 );
+
+        applyBrandStyles(alert);
 
         alert.setTitle(title);
         alert.setHeaderText(null);

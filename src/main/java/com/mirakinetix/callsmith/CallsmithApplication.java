@@ -1,6 +1,7 @@
 package com.mirakinetix.callsmith;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.mirakinetix.callsmith.application.collection.CollectionExportService;
 import com.mirakinetix.callsmith.application.collection.CollectionWorkspaceService;
 import com.mirakinetix.callsmith.application.collection.importation.CollectionImportPersistenceService;
 import com.mirakinetix.callsmith.application.collection.importation.CollectionImportService;
@@ -8,6 +9,7 @@ import com.mirakinetix.callsmith.application.environment.EnvironmentService;
 import com.mirakinetix.callsmith.application.environment.EnvironmentVariableResolver;
 import com.mirakinetix.callsmith.application.environment.EnvironmentVariableService;
 import com.mirakinetix.callsmith.application.http.HttpRequestService;
+import com.mirakinetix.callsmith.infrastructure.collection.PostmanCollectionExporter;
 import com.mirakinetix.callsmith.infrastructure.collection.importation.InsomniaCollectionImporter;
 import com.mirakinetix.callsmith.infrastructure.collection.importation.OpenApiImporter;
 import com.mirakinetix.callsmith.infrastructure.collection.importation.PostmanCollectionImporter;
@@ -130,6 +132,16 @@ public class CallsmithApplication extends Application {
                         )
                 );
 
+        CollectionExportService collectionExportService =
+                new CollectionExportService(
+                        collectionWorkspaceService,
+                        List.of(
+                                new PostmanCollectionExporter(
+                                        objectMapper
+                                )
+                        )
+                );
+
         JacksonJsonSerializer jsonSerializer =
                 new JacksonJsonSerializer();
 
@@ -158,6 +170,7 @@ public class CallsmithApplication extends Application {
                         environmentService,
                         environmentVariableService,
                         collectionWorkspaceService,
+                        collectionExportService,
                         collectionImportService,
                         collectionImportPersistenceService,
                         requestExecutor

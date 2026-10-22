@@ -1,0 +1,64 @@
+.root {
+    -fx-font-family: "Segoe UI";
+    -fx-base: #F4F7FB;
+    -fx-background: #F4F7FB;
+    -fx-control-inner-background: #FFFFFF;
+    -fx-accent: #0043CA;
+    -fx-focus-color: #00C3CE;
+    -fx-faint-focus-color: rgba(0, 195, 206, 0.18);
+    -fx-text-fill: #07152B;
+}
+
+.label {
+    -fx-text-fill: #07152B;
+}
+
+.brand-header {
+    -fx-background-color: #EAF2FC;
+    -fx-border-color: #D5DFEC;
+    -fx-border-width: 0 0 1 0;
+}
+
+.brand-header .label {
+    -fx-text-fill: #07152B;
+}
+
+.brand-header .product-name {
+    -fx-font-size: 20px;
+    -fx-font-weight: bold;
+}
+
+.button {
+    -fx-background-color: #E7EEF7;
+    -fx-text-fill: #07152B;
+    -fx-background-radius: 5;
+}
+
+.button:hover {
+    -fx-background-color: #D8E5F5;
+}
+
+.button:default {
+    -fx-background-color: #0043CA;
+    -fx-text-fill: #FFFFFF;
+}
+
+.text-field,
+.text-area,
+.combo-box,
+.list-view,
+.tree-view,
+.table-view {
+    -fx-border-color: #D5DFEC;
+    -fx-border-radius: 4;
+}
+
+.tree-cell:selected,
+.table-row-cell:selected {
+    -fx-background-color: #DCEBFF;
+    -fx-text-fill: #07152B;
+}
+
+.split-pane-divider {
+    -fx-background-color: #D5DFEC;
+}

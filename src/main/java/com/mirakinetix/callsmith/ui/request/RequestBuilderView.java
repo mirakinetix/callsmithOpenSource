@@ -155,7 +155,7 @@ public final class RequestBuilderView extends BorderPane {
         );
 
         variablesPanel.setStyle(
-                "-fx-border-color: #d0d0d0;" +
+                "-fx-border-color: #D5DFEC;" +
                 "-fx-border-radius: 4;" +
                 "-fx-background-radius: 4;"
         );
