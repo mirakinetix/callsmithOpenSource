@@ -29,7 +29,7 @@ public final class IconView extends Group {
     private static final double DEFAULT_SIZE = 16.0;
 
     private static final Color DEFAULT_COLOR =
-            Color.web("#374151");
+            Color.web("#07152B");
 
     private final double size;
 
