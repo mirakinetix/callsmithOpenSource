@@ -169,6 +169,14 @@ public final class MainWindow {
 
         root.setTop(branding);
         root.setCenter(workspace);
+        javafx.scene.layout.FlowPane brandFooter = new javafx.scene.layout.FlowPane(8, 4);
+        brandFooter.setAlignment(Pos.CENTER);
+        brandFooter.setPadding(new Insets(8));
+        brandFooter.getChildren().addAll(
+                createLink("MIRAKINETIX", MIRAKINETIX_WEBSITE_URL), new Label("·"),
+                createLink("LinkedIn", LINKEDIN_URL), new Label("·"),
+                createLink("dev dparab.me", PERSONAL_WEBSITE_URL));
+        root.setBottom(brandFooter);
 
         Scene scene =
                 new Scene(
