@@ -36,6 +36,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 import java.util.function.Predicate;
+import java.util.function.Consumer;
 import java.util.ArrayList;
 import com.mirakinetix.callsmith.ui.request.RequestBuilderView;
 import javafx.scene.control.ChoiceDialog;
@@ -120,6 +121,18 @@ public final class CollectionSidebar extends BorderPane {
 
     private RequestBuilderView editor;
     private boolean restoringSelection;
+    private Consumer<Collection> runCollectionAction;
+
+    public void setRunCollectionAction(Consumer<Collection> action) { runCollectionAction = action; }
+
+    private void runSelectedCollection() {
+        Collection selected = getSelectedCollection();
+        if (selected == null) {
+            showInformation("Run Collection", "Select a collection first.");
+        } else if (runCollectionAction != null) {
+            runCollectionAction.accept(selected);
+        }
+    }
 
     public void bindRequestEditor(RequestBuilderView editor) {
         this.editor = editor;
@@ -402,8 +415,9 @@ public final class CollectionSidebar extends BorderPane {
                         this::deleteSelectedCollection
                 );
 
-        GridPane actions =
-                new GridPane();
+        Button runButton = createActionButton("Run", Icon.PLAY, "Run saved requests in the selected collection",
+                this::runSelectedCollection);
+        GridPane actions = new GridPane();
 
         actions.setHgap(6);
         actions.setVgap(6);
@@ -421,6 +435,7 @@ public final class CollectionSidebar extends BorderPane {
         actions.add(exportButton, 0, 1);
         actions.add(renameButton, 1, 1);
         actions.add(deleteButton, 0, 2);
+        actions.add(runButton, 1, 2);
 
         for (Button button :
                 List.of(
@@ -428,7 +443,8 @@ public final class CollectionSidebar extends BorderPane {
                         importButton,
                         exportButton,
                         renameButton,
-                        deleteButton
+                        deleteButton,
+                        runButton
                 )) {
             button.setMaxWidth(Double.MAX_VALUE);
             GridPane.setHgrow(button, Priority.ALWAYS);
@@ -529,17 +545,7 @@ public final class CollectionSidebar extends BorderPane {
                             collection
                     );
 
-            addRootRequests(
-                    collectionItem,
-                    workspace.requestsByFolder()
-            );
-
-            addFolders(
-                    collectionItem,
-                    null,
-                    workspace.foldersByParent(),
-                    workspace.requestsByFolder()
-            );
+            addChildren(collectionItem, "", workspace, new java.util.HashSet<>());
 
             collectionItem.setExpanded(true);
 
@@ -1026,18 +1032,11 @@ public final class CollectionSidebar extends BorderPane {
         fileChooser.getExtensionFilters().addAll(
                 new FileChooser.ExtensionFilter(
                         "API Collections",
-                        "*.json",
-                        "*.yaml",
-                        "*.yml"
+                        "*.json"
                 ),
                 new FileChooser.ExtensionFilter(
                         "JSON",
                         "*.json"
-                ),
-                new FileChooser.ExtensionFilter(
-                        "YAML",
-                        "*.yaml",
-                        "*.yml"
                 ),
                 new FileChooser.ExtensionFilter(
                         "All Files",
@@ -1076,6 +1075,8 @@ public final class CollectionSidebar extends BorderPane {
                     "Import successful",
                     "Imported collection: "
                             + importedCollection.name()
+                            + (importedCollection.warnings().isEmpty() ? "" : "\n\nReview before running:\n"
+                            + String.join("\n", importedCollection.warnings()))
             );
 
         } catch (RuntimeException exception) {
@@ -1088,87 +1089,16 @@ public final class CollectionSidebar extends BorderPane {
         }
     }
 
-    private void addRootRequests(
-            TreeItem<WorkspaceItem> collectionItem,
-            Map<String, List<SavedRequest>> requestsByFolder
-    ) {
-        List<SavedRequest> requests =
-                requestsByFolder.get("");
-
-        if (requests == null) {
-            return;
-        }
-
-        for (SavedRequest request : requests) {
-            collectionItem.getChildren().add(
-                    new TreeItem<>(
-                            WorkspaceItem.request(request)
-                    )
-            );
-        }
-    }
-
-    private void addFolders(
-            TreeItem<WorkspaceItem> parentItem,
-            String parentFolderId,
-            Map<String, List<CollectionFolder>> foldersByParent,
-            Map<String, List<SavedRequest>> requestsByFolder
-    ) {
-        String parentKey =
-                parentFolderId == null
-                        ? ""
-                        : parentFolderId;
-
-        List<CollectionFolder> folders =
-                foldersByParent.get(parentKey);
-
-        if (folders == null) {
-            return;
-        }
-
-        for (CollectionFolder folder : folders) {
-            TreeItem<WorkspaceItem> folderItem =
-                    new TreeItem<>(
-                            WorkspaceItem.folder(folder)
-                    );
-
-            addFolderRequests(
-                    folderItem,
-                    folder.id(),
-                    requestsByFolder
-            );
-
-            addFolders(
-                    folderItem,
-                    folder.id(),
-                    foldersByParent,
-                    requestsByFolder
-            );
-
-            parentItem.getChildren().add(
-                    folderItem
-            );
-        }
-    }
-
-    private void addFolderRequests(
-            TreeItem<WorkspaceItem> folderItem,
-            String folderId,
-            Map<String, List<SavedRequest>> requestsByFolder
-    ) {
-        List<SavedRequest> requests =
-                requestsByFolder.get(folderId);
-
-        if (requests == null) {
-            return;
-        }
-
-        for (SavedRequest request : requests) {
-            folderItem.getChildren().add(
-                    new TreeItem<>(
-                            WorkspaceItem.request(request)
-                    )
-            );
+    private void addChildren(TreeItem<WorkspaceItem> parent, String parentKey,
+                             CollectionWorkspaceService.CollectionWorkspace workspace, java.util.Set<String> visited) {
+        for (var child : workspace.orderedChildren(parentKey)) {
+            if (child.folder() == null) {
+                parent.getChildren().add(new TreeItem<>(WorkspaceItem.request(child.request())));
+            } else if (visited.add(child.folder().id())) {
+                var folder = new TreeItem<>(WorkspaceItem.folder(child.folder()));
+                parent.getChildren().add(folder);
+                addChildren(folder, child.folder().id(), workspace, visited);
+            }
         }
     }
 

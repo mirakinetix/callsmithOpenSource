@@ -221,5 +221,19 @@ public final class CollectionWorkspaceService {
             Map<String, List<CollectionFolder>> foldersByParent,
             Map<String, List<SavedRequest>> requestsByFolder
     ) {
+        public List<Child> orderedChildren(String parentKey) {
+            var children = new ArrayList<Child>();
+            requestsByFolder.getOrDefault(parentKey, List.of())
+                    .forEach(request -> children.add(new Child(null, request)));
+            foldersByParent.getOrDefault(parentKey, List.of())
+                    .forEach(folder -> children.add(new Child(folder, null)));
+            // Stable sort preserves the repository order for legacy rows that share an index.
+            children.sort(java.util.Comparator.comparingInt(Child::sortOrder));
+            return List.copyOf(children);
+        }
+    }
+
+    public record Child(CollectionFolder folder, SavedRequest request) {
+        private int sortOrder() { return folder == null ? request.sortOrder() : folder.sortOrder(); }
     }
 }

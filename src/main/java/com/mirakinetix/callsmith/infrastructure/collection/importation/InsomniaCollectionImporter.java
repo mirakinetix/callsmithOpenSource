@@ -198,8 +198,17 @@ public final class InsomniaCollectionImporter
                     "Imported Insomnia Collection";
         }
 
-        Map<String, JsonNode> resourcesById =
-                indexResources(resources);
+        Map<String, JsonNode> resourcesById = indexResources(resources);
+        Map<JsonNode, Integer> order = new java.util.IdentityHashMap<>();
+        Map<String, Integer> nextIndex = new java.util.HashMap<>();
+        for (JsonNode resource : resources) {
+            String type = textValue(resource.get("_type"));
+            if ("request".equals(type) || "request_group".equals(type)) {
+                String parent = textValue(resource.get("parentId"));
+                String key = parent == null || isWorkspace(resourcesById.get(parent)) ? "" : parent;
+                order.put(resource, nextIndex.merge(key, 1, Integer::sum) - 1);
+            }
+        }
 
         List<ImportedRequest> rootRequests =
                 new ArrayList<>();
@@ -229,7 +238,7 @@ public final class InsomniaCollectionImporter
                     )) {
 
                 rootRequests.add(
-                        parseRequest(resource)
+                        parseRequest(resource, order.get(resource))
                 );
             }
         }
@@ -256,7 +265,7 @@ public final class InsomniaCollectionImporter
                 folders.add(
                         parseFolder(
                                 resource,
-                                resourcesById
+                                resourcesById, order, 0
                         )
                 );
             }
@@ -265,14 +274,16 @@ public final class InsomniaCollectionImporter
         return new ImportedCollection(
                 collectionName,
                 folders,
-                rootRequests
+                rootRequests,
+                List.of("Review imported requests. Insomnia authentication, scripts, structured body fields, file references and environment definitions are not imported.")
         );
     }
 
     private ImportedFolder parseFolder(
             JsonNode folder,
-            Map<String, JsonNode> resourcesById
+            Map<String, JsonNode> resourcesById, Map<JsonNode, Integer> order, int depth
     ) {
+        if (depth > 64) throw new IllegalArgumentException("Insomnia collection nesting exceeds 64 levels.");
         String folderId =
                 textValue(
                         folder.get("_id")
@@ -315,12 +326,12 @@ public final class InsomniaCollectionImporter
                 childFolders.add(
                         parseFolder(
                                 resource,
-                                resourcesById
+                                resourcesById, order, depth + 1
                         )
                 );
             } else if ("request".equals(type)) {
                 requests.add(
-                        parseRequest(resource)
+                        parseRequest(resource, order.get(resource))
                 );
             }
         }
@@ -328,13 +339,12 @@ public final class InsomniaCollectionImporter
         return new ImportedFolder(
                 folderName,
                 childFolders,
-                requests
+                requests,
+                order.get(folder)
         );
     }
 
-    private ImportedRequest parseRequest(
-            JsonNode request
-    ) {
+    private ImportedRequest parseRequest(JsonNode request, Integer order) {
         String name =
                 textValue(
                         request.get("name")
@@ -356,10 +366,10 @@ public final class InsomniaCollectionImporter
         }
 
         method =
-                method.toUpperCase();
+                method.toUpperCase(java.util.Locale.ROOT);
 
         if (!HTTP_METHODS.contains(method)) {
-            method = "GET";
+            throw new IllegalArgumentException("The Insomnia export contains an unsupported HTTP method.");
         }
 
         String url =
@@ -392,7 +402,8 @@ public final class InsomniaCollectionImporter
                 url,
                 headers,
                 queryParameters,
-                body
+                body,
+                order
         );
     }
 
@@ -504,7 +515,8 @@ public final class InsomniaCollectionImporter
 
         if (params != null
                 && params.isArray()) {
-            return params.toString();
+            // Structured params and file references are not raw HTTP request content.
+            return null;
         }
 
         if (mimeType != null
@@ -548,10 +560,9 @@ public final class InsomniaCollectionImporter
 
             if (id != null
                     && !id.isBlank()) {
-                resourcesById.put(
-                        id,
-                        resource
-                );
+                if (resourcesById.putIfAbsent(id, resource) != null) {
+                    throw new IllegalArgumentException("Insomnia export contains duplicate resource IDs.");
+                }
             }
         }
 

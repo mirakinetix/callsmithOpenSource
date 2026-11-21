@@ -8,6 +8,10 @@ import com.mirakinetix.callsmith.application.environment.EnvironmentService;
 import com.mirakinetix.callsmith.application.environment.SecretStorage;
 import com.mirakinetix.callsmith.application.environment.EnvironmentVariableService;
 import com.mirakinetix.callsmith.application.http.HttpRequestService;
+import com.mirakinetix.callsmith.application.testing.AssertionEvaluator;
+import com.mirakinetix.callsmith.application.testing.AssertionRepository;
+import com.mirakinetix.callsmith.application.testing.CollectionRunner;
+import com.mirakinetix.callsmith.ui.testing.CollectionRunDialog;
 import com.mirakinetix.callsmith.ui.collection.CollectionSidebar;
 import com.mirakinetix.callsmith.ui.environment.EnvironmentManager;
 import com.mirakinetix.callsmith.ui.request.RequestBuilderView;
@@ -56,6 +60,9 @@ public final class MainWindow {
     private final CollectionImportPersistenceService collectionImportPersistenceService;
     private final ExecutorService requestExecutor;
     private final SecretStorage secretStorage;
+    private final AssertionRepository assertions;
+    private final AssertionEvaluator evaluator;
+    private final CollectionRunner runner;
 
     public MainWindow(
             HttpRequestService httpRequestService,
@@ -66,9 +73,13 @@ public final class MainWindow {
             CollectionImportService collectionImportService,
             CollectionImportPersistenceService collectionImportPersistenceService,
             SecretStorage secretStorage,
+            AssertionRepository assertions, AssertionEvaluator evaluator, CollectionRunner runner,
             ExecutorService requestExecutor
     ) {
         this.secretStorage = secretStorage;
+        this.assertions = assertions;
+        this.evaluator = evaluator;
+        this.runner = runner;
         this.httpRequestService =
                 httpRequestService;
 
@@ -131,7 +142,10 @@ public final class MainWindow {
                         }
                 );
 
+        requestBuilderView.configureAssertions(assertions, evaluator);
         collectionSidebar.bindRequestEditor(requestBuilderView);
+        collectionSidebar.setRunCollectionAction(collection -> CollectionRunDialog.show(stage, collection,
+                environmentService.findAll(), requestBuilderView.getSelectedEnvironmentId(), runner));
         stage.addEventHandler(javafx.stage.WindowEvent.WINDOW_CLOSE_REQUEST, event -> {
             if (!requestBuilderView.allowDiscard()) {
                 event.consume();

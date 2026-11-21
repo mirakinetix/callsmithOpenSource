@@ -7,10 +7,10 @@
 | P0 secret storage | The baseline bound the raw value to SQLite. | Passphrase-protected rows and explicit migration implemented. Legacy copies and interactive platform checks remain release considerations. |
 | P0 redirect and response data | The baseline followed automatic redirects and decoded all replies as text. | Same-origin policy, binary preservation, and byte counts verified in Part 2. |
 | P0 URL fragments | Add a query field to a URL ending in a fragment. The baseline appends the parameter after the fragment. | Fixed and tested against a loopback server. |
-| P1 Postman round trip | Export a nested collection with a raw body and import the exported JSON. | Basic round trip covered. Wider format compatibility and explicit warnings remain. |
-| P1 API testing | The response inspector displays responses but has no assertions or collection runner. | Open. |
+| P1 Postman round trip | Export a nested collection with a raw body and import the exported JSON. | Mixed folder and request order, raw fields, and variable templates verified with a round-trip fixture. Unsupported features produce warnings. |
+| P1 API testing | The baseline response inspector had no assertions or collection runner. | Persistent response rules and sequential collection runs implemented, with loopback and JavaFX coverage. |
 | P1 HTTP controls | The baseline had one raw body field and a fixed timeout. | Part 2 adds temporary auth, structured bodies, file selection, configurable timeout and JSON formatting. |
-| P1 packaging | Both scripts pin dependencies and app version. Windows startup reported missing SQLite module native access. | Added native access option to both scripts. macOS builds and workflow checks remain. |
+| P1 packaging | Both scripts pin dependencies and app version. Windows startup reported missing SQLite module native access. | Both scripts include native access options. Windows x64 smoke checks and platform beta gates are recorded below. |
 | P2 parity | Broader protocol support, scripting and CLI integration. | Deferred. |
 
 ## Part 1 — Secret Storage
@@ -91,3 +91,59 @@ geometry, so manual packaged dialog and native file chooser checks remain.
   was unavailable. Visual taskbar checks at Windows scaling settings and native
   dialog interaction remain open. The macOS script passed bash syntax checking.
   macOS Intel and Apple Silicon packaging and GUI tests remain open.
+
+## Part 4 — Assertions, collection runs, and compatibility
+
+- SQLite migration V14 adds saved-request assertion definitions. Existing request
+  and secret tables retain their schemas. Definitions follow the same request
+  ID when moved and are removed on deletion. Encrypted environment variables can
+  be resolved for comparisons while unlocked. Reports omit comparison values.
+- The runner walks saved requests in displayed order, uses the selected
+  environment, and retains earlier results after a request fails or the user
+  cancels. It applies the existing HTTP redirect and transport boundaries.
+  Limits are 100 requests, 64 folder levels, 30 seconds per request and five
+  minutes of execution. Imported requests require the same explicit Start Run
+  step as any other collection.
+- Fictional fixtures cover Postman round-trip order and fields, Insomnia legacy
+  resource order, invalid input, and import rollback. OpenAPI support remains
+  limited to JSON. Complex authentication, scripts and unsupported body formats
+  are reported rather than executed or emulated.
+- Maven targets Java 25. The packaging scripts and artifact names match Maven's
+  1.0.0 version. JavaFX 25, Jackson 2.21.5 and SQLite JDBC 3.53.4.0 are
+  shared pins. Review the package scripts whenever Maven dependency versions
+  change. The project retains Apache 2.0 licensing and its Lucide attribution.
+  Review the notices for the bundled JDK and other redistributable dependencies
+  when preparing release artifacts.
+- Headless Maven verification runs on Windows and Linux in the local CI
+  configuration. Packaging workflows are separately triggered. Before merging
+  to main, review the branch rules with the repository owner and require the
+  headless checks and a maintainer-reviewed pull request.
+
+### Verification results
+
+- Maven verify passed 196 tests with zero failures and errors. Six JavaFX
+  tests were skipped by default and passed in a separate opt-in run.
+- The Windows x64 application image created a new disposable SQLite database,
+  exposed the branded main window and its Run and Assertions controls, and
+  shut down through a normal window-close request. stderr remained empty.
+  All seven approved ICO image payloads were present in the launcher, and all
+  44 PNG files matched the packaged copies. V14 was present in the app JAR.
+- The desktop input provider reported unavailable coordinate geometry for
+  packaged clicks. Source-based JavaFX tests covered collection editing, the
+  assertion dialog and reports, and Secret Storage. Native chooser and
+  taskbar scaling checks remain open. The macOS script passed a Bash syntax
+  check. Neither macOS architecture was built or launched here.
+
+### Beta verification still open
+
+1. On a clean Windows x64 machine, launch the package with a disposable
+   workspace. Repeat the collection, assertion, runner and encrypted-storage
+   workflows. Open the file upload and response-save choosers. Confirm file
+   selection, save and cancel behavior. Check the taskbar icon at standard
+   and scaled display settings, then close and restart Callsmith normally.
+2. Build and launch natively on Intel and Apple Silicon Macs. Verify the icon,
+   window and native dialogs, protect and unlock a fictional secret, export
+   a collection, then close and restart the app on each architecture.
+3. Confirm review and required checks on main, review bundled dependency
+   notices and version pins, and choose the beta version before preparing
+   public artifacts. Do not present syntax checks as macOS runtime validation.

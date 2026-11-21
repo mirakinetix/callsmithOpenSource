@@ -231,7 +231,8 @@ public final class MigrationRunner {
                 ),
                 new Migration(11, "V11__rename_environment_variable_value.sql"),
                 new Migration(12, "V12__add_secret_protection_version.sql"),
-                new Migration(13, "V13__create_secret_storage.sql")
+                new Migration(13, "V13__create_secret_storage.sql"),
+                new Migration(14, "V14__create_request_assertions.sql")
         );
     }
 

@@ -9,6 +9,9 @@ import com.mirakinetix.callsmith.application.environment.EnvironmentService;
 import com.mirakinetix.callsmith.application.environment.EnvironmentVariableResolver;
 import com.mirakinetix.callsmith.application.environment.EnvironmentVariableService;
 import com.mirakinetix.callsmith.application.http.HttpRequestService;
+import com.mirakinetix.callsmith.application.testing.AssertionEvaluator;
+import com.mirakinetix.callsmith.application.testing.CollectionRunner;
+import com.mirakinetix.callsmith.infrastructure.persistence.sqlite.SqliteAssertionRepository;
 import com.mirakinetix.callsmith.infrastructure.collection.PostmanCollectionExporter;
 import com.mirakinetix.callsmith.infrastructure.collection.importation.InsomniaCollectionImporter;
 import com.mirakinetix.callsmith.infrastructure.collection.importation.OpenApiImporter;
@@ -169,6 +172,11 @@ public class CallsmithApplication extends Application {
         requestExecutor =
                 Executors.newVirtualThreadPerTaskExecutor();
 
+        var assertionRepository = new SqliteAssertionRepository(sqliteDatabase, objectMapper);
+        var assertionEvaluator = new AssertionEvaluator(variableResolver);
+        var runner = new CollectionRunner(collectionWorkspaceService, assertionRepository,
+                httpRequestService, assertionEvaluator);
+
         MainWindow mainWindow =
                 new MainWindow(
                         httpRequestService,
@@ -179,6 +187,9 @@ public class CallsmithApplication extends Application {
                         collectionImportService,
                         collectionImportPersistenceService,
                         secretStorage,
+                        assertionRepository,
+                        assertionEvaluator,
+                        runner,
                         requestExecutor
                 );
 

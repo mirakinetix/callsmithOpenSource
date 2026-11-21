@@ -149,7 +149,7 @@ public final class SqliteCollectionImportPersistenceService
                     collectionId,
                     parentFolderId,
                     importedFolder.name(),
-                    index,
+                    importedFolder.sortOrder() == null ? index : importedFolder.sortOrder(),
                     timestamp
             );
 
@@ -195,7 +195,7 @@ public final class SqliteCollectionImportPersistenceService
                     collectionId,
                     folderId,
                     importedRequest,
-                    index,
+                    importedRequest.sortOrder() == null ? index : importedRequest.sortOrder(),
                     timestamp
             );
         }

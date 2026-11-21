@@ -1,5 +1,6 @@
 package com.mirakinetix.callsmith;
 
+import com.mirakinetix.callsmith.domain.collection.Collection;
 import com.mirakinetix.callsmith.domain.environment.Environment;
 import com.mirakinetix.callsmith.domain.request.SavedRequest;
 import com.mirakinetix.callsmith.infrastructure.persistence.CallsmithDatabase;
@@ -27,8 +28,10 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
 import java.time.Instant;
 import java.util.List;
+import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicInteger;
 
 import static com.mirakinetix.callsmith.DesktopFx.*;
 import static org.junit.jupiter.api.Assertions.*;
@@ -239,6 +242,79 @@ class WorkspaceDesktopTest {
         } finally {
             close(opened);
             server.stop(0);
+        }
+    }
+
+    @Test
+    void savesAssertionsAndShowsIndividualAndCollectionResults() throws Exception {
+        DesktopFx.start();
+        Path path = directory.resolve("assertion-workspace.db");
+        var database = new SqliteDatabase(path);
+        new CallsmithDatabase(database, new MigrationRunner()).initialize();
+        var now = Instant.now();
+        var collection = new Collection("runner-fixture", "Runner fixture", now, now);
+        new SqliteCollectionRepository(database).save(collection);
+        var requests = new SqliteSavedRequestRepository(database, new JacksonJsonSerializer());
+        var count = new AtomicInteger();
+        var server = localServer();
+        server.createContext("/fixture", exchange -> {
+            try (exchange) {
+                count.incrementAndGet();
+                int status = exchange.getRequestURI().getPath().endsWith("/pass") ? 200 : 404;
+                var body = "fictional response payload".getBytes(StandardCharsets.UTF_8);
+                exchange.getResponseHeaders().set("Content-Type", "text/plain");
+                exchange.sendResponseHeaders(status, body.length);
+                exchange.getResponseBody().write(body);
+            }
+        });
+        server.start();
+        Opened opened = null;
+        try {
+            requests.save(new SavedRequest("pass", collection.id(), null, "First check", "GET",
+                    base(server) + "/fixture/pass", Map.of(), Map.of(), "", 0, now, now));
+            requests.save(new SavedRequest("fail", collection.id(), null, "Second check", "GET",
+                    base(server) + "/fixture/fail", Map.of(), Map.of(), "", 1, now, now));
+            opened = open(path);
+            var main = opened.root();
+            expand(main, "Runner fixture");
+            select(main, "First check");
+            var editing = action(() -> button(main, "Assertions").fire());
+            var editor = dialog("Response Assertions");
+            fx(() -> {
+                button(editor, "Add Rule").fire();
+                choose(editor, "Save Assertions");
+                return null;
+            });
+            finish(editing);
+            fire(main, "Send");
+            await(() -> ((TextArea) main.lookup("#response-assertions")).getText(),
+                    results -> results.contains("PASS Status equals"), "single-request assertion report");
+            assertEquals(1, count.get());
+
+            select(main, "Runner fixture");
+            var running = action(() -> button(main, "Run").fire());
+            var dialog = dialog("Run Collection");
+            fx(() -> {
+                assertEquals(1, count.get());
+                choose(dialog, "Start Run");
+                return null;
+            });
+            await(() -> labels(dialog), value -> value.contains("1 passed, 1 failed"), "collection run summary");
+            var report = fx(() -> ((TextArea) dialog.lookup(".text-area")).getText());
+            assertTrue(report.contains("Request 1 PASS"));
+            assertTrue(report.contains("PASS Status equals"));
+            assertTrue(report.contains("Request 2 FAIL"));
+            assertFalse(report.contains("fictional response payload"));
+            assertFalse(report.contains(base(server)));
+            assertEquals(3, count.get());
+            fx(() -> { choose(dialog, "Close"); return null; });
+            finish(running);
+        } finally {
+            try {
+                close(opened);
+            } finally {
+                server.stop(0);
+            }
         }
     }
 

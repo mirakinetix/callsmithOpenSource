@@ -140,7 +140,9 @@ public final class OpenApiImporter
             return new ImportedCollection(
                     collectionName,
                     folders,
-                    rootRequests
+                    rootRequests,
+                    List.of("Review generated requests. OpenAPI security schemes are not applied. " +
+                            "Only supported examples and schema-derived bodies and parameters are imported.")
             );
 
         } catch (IOException exception) {

@@ -6,6 +6,9 @@ import com.mirakinetix.callsmith.application.http.HttpRequestService;
 import com.mirakinetix.callsmith.domain.environment.Environment;
 import com.mirakinetix.callsmith.domain.environment.EnvironmentVariable;
 import com.mirakinetix.callsmith.domain.http.HttpRequest;
+import com.mirakinetix.callsmith.application.testing.AssertionRepository;
+import com.mirakinetix.callsmith.application.testing.AssertionEvaluator;
+import com.mirakinetix.callsmith.ui.testing.AssertionDialog;
 import com.mirakinetix.callsmith.domain.http.RequestOptions;
 import com.mirakinetix.callsmith.ui.response.ResponsePreview;
 import com.mirakinetix.callsmith.domain.http.HttpResponse;
@@ -74,6 +77,19 @@ public final class RequestBuilderView extends BorderPane {
     private java.util.concurrent.Future<?> inFlight;
     private long responseGeneration;
     private final Button cancelSend = new Button("Cancel", new IconView(Icon.CANCEL));
+    private final Button assertionButton = new Button("Assertions", new IconView(Icon.CHECK));
+    private AssertionRepository assertions;
+    private AssertionEvaluator assertionEvaluator;
+
+    public void configureAssertions(AssertionRepository repository, AssertionEvaluator evaluator) {
+        assertions = repository;
+        assertionEvaluator = evaluator;
+        assertionButton.setOnAction(event -> {
+            if (savedRequest != null) AssertionDialog.show(getScene().getWindow(), savedRequest.id(), assertions);
+        });
+        assertionButton.setDisable(savedRequest == null);
+    }
+
     private final Button sendOptionsButton = new Button("Send Options...", new IconView(Icon.SETTINGS));
     private RequestOptions sendOptions = RequestOptions.DEFAULT;
 
@@ -111,6 +127,7 @@ public final class RequestBuilderView extends BorderPane {
 
     public void markSaved(SavedRequest request) {
         savedRequest = request;
+        assertionButton.setDisable(request == null || assertions == null);
         cleanDraft = draft();
         requestName.setText(request == null ? "Unsaved request" : request.name());
     }
@@ -163,8 +180,9 @@ public final class RequestBuilderView extends BorderPane {
         saveButton.setOnAction(event -> save.run());
         Button saveAsButton = new Button("Save As", new IconView(Icon.SAVE_AS));
         saveAsButton.setOnAction(event -> saveAs.run());
-        savedRequestActions.getChildren().setAll(
-                requestName, new HBox(6, create, saveButton, saveAsButton, sendOptionsButton));
+        var actions = new javafx.scene.layout.FlowPane(6, 4, create, saveButton, saveAsButton, sendOptionsButton);
+        if (assertions != null) actions.getChildren().add(assertionButton);
+        savedRequestActions.getChildren().setAll(requestName, actions);
         markSaved(null);
     }
 
@@ -656,8 +674,8 @@ public final class RequestBuilderView extends BorderPane {
                         sendOptions
                 );
 
-        String environmentId =
-                getSelectedEnvironmentId();
+        String environmentId = getSelectedEnvironmentId();
+        String assertionRequestId = savedRequest == null ? null : savedRequest.id();
 
         inFlight = requestExecutor.submit(
                 () -> {
@@ -668,6 +686,7 @@ public final class RequestBuilderView extends BorderPane {
                                         environmentId
                                 );
                         ResponsePreview preview = ResponsePreview.prepare(response);
+                        String checks = assertionReport(assertionRequestId, response, environmentId);
 
                         Platform.runLater(
                                 () -> {
@@ -680,6 +699,7 @@ public final class RequestBuilderView extends BorderPane {
                                             .displayResponse(
                                                     response, preview
                                             );
+                                    responseInspector.displayAssertions(checks);
 
                                     sendButton.setDisable(
                                             false
@@ -688,6 +708,7 @@ public final class RequestBuilderView extends BorderPane {
                         );
 
                     } catch (RuntimeException exception) {
+                        String checks = assertionReport(assertionRequestId, null, environmentId);
                         Platform.runLater(
                                 () -> {
                                     if (generation != responseGeneration) {
@@ -699,6 +720,7 @@ public final class RequestBuilderView extends BorderPane {
                                             .displayError(
                                                     exception
                                             );
+                                    responseInspector.displayAssertions(checks);
 
                                     sendButton.setDisable(
                                             false
@@ -710,7 +732,20 @@ public final class RequestBuilderView extends BorderPane {
         );
     }
 
-    private String getSelectedEnvironmentId() {
+    private String assertionReport(String requestId, HttpResponse response, String environmentId) {
+        if (requestId == null || assertions == null) return "";
+        try {
+            var definitions = assertions.find(requestId);
+            var results = response == null ? assertionEvaluator.noResponse(definitions)
+                    : assertionEvaluator.evaluate(response, definitions, environmentId);
+            return results.stream()
+                    .map(AssertionEvaluator.Result::reportLine).collect(java.util.stream.Collectors.joining("\n"));
+        } catch (RuntimeException exception) {
+            return "FAIL — Saved assertions could not be evaluated.";
+        }
+    }
+
+    public String getSelectedEnvironmentId() {
         EnvironmentOption selected =
                 environmentSelector
                         .getSelectionModel()

@@ -91,3 +91,22 @@ Credentials for send helpers and selected upload files are session data. Existin
 inline credentials in saved request fields and exported collections remain
 outside Secret Storage. A server can still return supplied credentials in its
 headers or body. Treat response data and saved response files as sensitive.
+
+## Assertions and collection execution
+
+Assertion definitions store their configured literals and references with the
+saved request. Use literals only for non-secret data. Known credential-bearing
+response headers such as Authorization, Set-Cookie and X-API-Key require a
+variable reference for equality comparisons. Use protected variables for all
+sensitive comparisons, including response text, JSON values or custom headers.
+Callsmith resolves references in memory for evaluation. The result shows the
+rule type, pass or fail, and a fixed explanation. Status codes and timings can
+appear in reports. Header names, body text, comparison values and URLs are omitted.
+
+Selecting **Start Run** deliberately sends saved requests, including changes on
+the destination server. Review every imported collection and choose the intended
+environment before starting. The runner reuses the same-origin redirect policy
+and response limits. Cancellation stops later requests and attempts to cancel
+the active exchange. It cannot undo a request the server has received. Reports
+stay in the dialog. Collection exports preserve raw request fields and omit
+resolved secrets and assertion definitions.

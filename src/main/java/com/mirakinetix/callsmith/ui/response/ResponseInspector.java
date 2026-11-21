@@ -25,6 +25,7 @@ public final class ResponseInspector extends VBox {
     private final Label url = new Label();
     private final TextArea headers = new TextArea();
     private final TextArea body = new TextArea();
+    private final TextArea assertions = new TextArea();
     private final CheckBox pretty = new CheckBox("Format JSON");
     private final Button save = new Button("Save Response Bytes...", new IconView(Icon.SAVE_RESPONSE));
     private HttpResponse current;
@@ -35,6 +36,10 @@ public final class ResponseInspector extends VBox {
         setPadding(new Insets(12));
         status.setId("response-status");
         body.setId("response-body");
+        assertions.setEditable(false);
+        assertions.setPrefRowCount(4);
+        assertions.setAccessibleText("Response assertion results");
+        assertions.setId("response-assertions");
         headers.setEditable(false);
         headers.setWrapText(true);
         headers.setPrefRowCount(5);
@@ -47,7 +52,7 @@ public final class ResponseInspector extends VBox {
         save.setOnAction(event -> saveResponse());
         VBox.setVgrow(body, Priority.ALWAYS);
         getChildren().addAll(new Label("Response", new IconView(Icon.RESPONSE)), new HBox(16, status, timing, size), url,
-                new Label("Headers"), headers, new HBox(10, new Label("Body"), pretty, save), body);
+                new Label("Headers"), headers, new HBox(10, new Label("Body"), pretty, save), body, assertions);
         clear();
     }
 
@@ -88,7 +93,14 @@ public final class ResponseInspector extends VBox {
         }
     }
 
+    public void displayAssertions(String report) {
+        assertions.setText(report);
+        assertions.setVisible(!report.isEmpty());
+        assertions.setManaged(!report.isEmpty());
+    }
+
     public void clear() {
+        displayAssertions("");
         current = null;
         preview = null;
         status.setText("Status: -");

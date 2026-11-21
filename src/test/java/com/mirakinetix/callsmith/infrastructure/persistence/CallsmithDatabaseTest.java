@@ -118,7 +118,7 @@ class CallsmithDatabaseTest {
             resultSet.next();
 
             assertEquals(
-                    13,
+                    14,
                     migrationCountAfterFirstInitialization
             );
 
