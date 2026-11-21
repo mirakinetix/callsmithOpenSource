@@ -6,12 +6,17 @@ import com.mirakinetix.callsmith.domain.http.HttpRequest;
 import com.mirakinetix.callsmith.domain.http.HttpResponse;
 import com.mirakinetix.callsmith.domain.http.RequestOptions;
 
+import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Optional;
 import java.util.function.UnaryOperator;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 public final class HttpRequestService {
+    private static final Pattern VARIABLE = Pattern.compile("\\{!\\{([^{}]+)}}|\\{\\{([^{}]+)}}");
     private final RequestExecutor requestExecutor;
     private final VariableResolver variableResolver;
 
@@ -29,8 +34,8 @@ public final class HttpRequestService {
     }
 
     public HttpResponse execute(HttpRequest request, String environmentId) {
-        var resolved = variableResolver == null || environmentId == null || environmentId.isBlank()
-                ? request : resolveRequest(request, value -> variableResolver.resolve(value, environmentId));
+        Map<String, String> variables = new HashMap<>();
+        var resolved = resolveRequest(request, value -> expand(value, environmentId, variables));
         HttpResponse response;
         try {
             response = requestExecutor.execute(resolved);
@@ -48,6 +53,39 @@ public final class HttpRequestService {
                 ? response.withoutUrl() : response;
     }
 
+    private String expand(String value, String environmentId, Map<String, String> variables) {
+        if (value == null) return null;
+        Matcher matcher = VARIABLE.matcher(value);
+        if (!matcher.find()) return value;
+        StringBuilder expanded = new StringBuilder();
+        do {
+            String literal = matcher.group(1);
+            String replacement;
+            if (literal != null) {
+                replacement = "{{" + literal + "}}";
+            } else {
+                String name = matcher.group(2).trim();
+                replacement = variables.computeIfAbsent(name, key -> lookup(key, environmentId));
+            }
+            matcher.appendReplacement(expanded, Matcher.quoteReplacement(replacement));
+        } while (matcher.find());
+        return matcher.appendTail(expanded).toString();
+    }
+
+    private String lookup(String name, String environmentId) {
+        if (environmentId == null || environmentId.isBlank()) {
+            throw new HttpFailure(HttpFailure.Kind.VARIABLE_ENVIRONMENT);
+        }
+        if (variableResolver == null) throw new HttpFailure(HttpFailure.Kind.VARIABLE_UNAVAILABLE);
+        Optional<String> value;
+        try {
+            value = variableResolver.lookup(name, environmentId);
+        } catch (RuntimeException exception) {
+            throw new HttpFailure(HttpFailure.Kind.VARIABLE_UNAVAILABLE);
+        }
+        return value.orElseThrow(() -> new HttpFailure(HttpFailure.Kind.VARIABLE_MISSING));
+    }
+
     private static HttpRequest resolveRequest(HttpRequest request, UnaryOperator<String> resolve) {
         var options = request.options();
         var auth = options.authentication();
@@ -58,7 +96,12 @@ public final class HttpRequestService {
         var fields = options.fields().stream()
                 .map(field -> new RequestOptions.Field(resolve.apply(field.name()), resolve.apply(field.value())))
                 .toList();
-        var resolvedOptions = new RequestOptions(options.timeout(), auth, options.format(), fields, options.upload());
+        var upload = options.upload();
+        if (upload != null) {
+            String field = resolve.apply(upload.field());
+            if (!Objects.equals(field, upload.field())) upload = upload.withField(field);
+        }
+        var resolvedOptions = new RequestOptions(options.timeout(), auth, options.format(), fields, upload);
         return new HttpRequest(request.method(), resolve.apply(request.url()), resolveMap(request.headers(), resolve),
                 resolveMap(request.queryParameters(), resolve), resolve.apply(request.body()), resolvedOptions);
     }

@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- Blocked unresolved request variables before individual and collection sends,
+  and added explicit syntax for sending literal placeholder text.
+- Applied OpenAPI operation, path and document server precedence and blocked
+  invalid effective servers from falling back to a different destination.
+
 - Added passphrase protection for environment variables marked Secret, with
   explicit migration of existing values and workspace lock and unlock.
 - Variable lists show masked summaries without reading protected values.

@@ -66,6 +66,19 @@ Callsmith supports GET, POST, PUT, PATCH, DELETE, HEAD and OPTIONS. Add headers 
 query parameters in the request editor. To send repeated query names, put them in
 the URL itself. Existing URL query values are preserved, and fragments stay local.
 
+Before sending, Callsmith resolves references such as `{{apiToken}}` from the
+selected environment. This applies to URLs, header and query names and values,
+bodies, authentication, and form fields. A missing reference, no selected
+environment, or an unreadable protected value stops that request before it goes
+to the server. Select the correct environment and unlock Secret Storage if the
+request needs a protected value. A collection run records the failed step and
+continues with the next request.
+
+To send literal `{{example}}` in a body, enter `{!{example}}`. For example,
+`{"template":"{!{example}}"}` sends `{"template":"{{example}}"}`. Values
+returned by environment lookup are used as supplied and are evaluated only once.
+Use percent-encoded braces when the literal belongs in the URL itself.
+
 Open **Send Options** to change authentication, body format, or request timeout.
 
 - Choose Basic, Bearer, or API key in a header or query parameter. Use a protected
@@ -145,6 +158,13 @@ already have processed a request. Run reports are kept in the open dialog.
 | Postman Collection v2 JSON | Import and export nested folders, mixed folder and request order, methods, URLs, headers, query values and raw bodies. Callsmith exports can be imported again. |
 | OpenAPI 3.x JSON | Import supported HTTP operations using their URLs, methods, supported parameters and a representative request body where available. |
 | Insomnia legacy JSON with a resources array | Import supported requests and nested folders in resource order, including headers, query values and text bodies. |
+
+OpenAPI uses the first server at the operation level, then the path level, then
+the document level. A missing declaration at every level or an empty effective
+server list uses the default `/`. Server variable defaults are expanded.
+An invalid effective server stops the import with an error at that scope.
+Relative server paths in local files are imported with a warning. Set an absolute
+HTTP(S) URL before sending those requests.
 
 Literal Callsmith-style variable references such as {{apiToken}} can be preserved
 in supported request fields. Configure their values separately in the workspace.

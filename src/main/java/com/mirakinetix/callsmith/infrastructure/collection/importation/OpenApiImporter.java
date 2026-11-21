@@ -8,6 +8,7 @@ import com.mirakinetix.callsmith.domain.collection.importation.ImportedFolder;
 import com.mirakinetix.callsmith.domain.collection.importation.ImportedRequest;
 
 import java.io.IOException;
+import java.net.URI;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
@@ -97,12 +98,6 @@ public final class OpenApiImporter
                             "Imported OpenAPI"
                     );
 
-            JsonNode servers =
-                    root.get("servers");
-
-            String serverUrl =
-                    parseServerUrl(servers);
-
             Map<String, List<ImportedRequest>>
                     taggedRequests =
                     new LinkedHashMap<>();
@@ -113,15 +108,7 @@ public final class OpenApiImporter
             JsonNode paths =
                     root.get("paths");
 
-            if (paths != null && paths.isObject()) {
-                parsePaths(
-                        paths,
-                        root,
-                        serverUrl,
-                        taggedRequests,
-                        rootRequests
-                );
-            }
+            boolean needsOrigin = parsePaths(paths, root, taggedRequests, rootRequests);
 
             List<ImportedFolder> folders =
                     new ArrayList<>();
@@ -137,13 +124,14 @@ public final class OpenApiImporter
                             )
             );
 
-            return new ImportedCollection(
-                    collectionName,
-                    folders,
-                    rootRequests,
-                    List.of("Review generated requests. OpenAPI security schemes are not applied. " +
-                            "Only supported examples and schema-derived bodies and parameters are imported.")
-            );
+            var warnings = new ArrayList<String>();
+            warnings.add("Review generated requests. OpenAPI security schemes are not applied. " +
+                    "Only supported examples and schema-derived bodies and parameters are imported.");
+            if (needsOrigin) {
+                warnings.add("Some operations have a relative OpenAPI server and this local file has no HTTP origin. "
+                        + "Set an absolute URL for each of those requests before sending.");
+            }
+            return new ImportedCollection(collectionName, folders, rootRequests, List.copyOf(warnings));
 
         } catch (IOException exception) {
             throw new IllegalArgumentException(
@@ -201,14 +189,14 @@ public final class OpenApiImporter
         }
     }
 
-    private void parsePaths(
+    private boolean parsePaths(
             JsonNode paths,
             JsonNode root,
-            String serverUrl,
             Map<String, List<ImportedRequest>>
                     taggedRequests,
             List<ImportedRequest> rootRequests
     ) {
+        boolean needsOrigin = false;
         for (Map.Entry<String, JsonNode> pathEntry :
                 paths.properties()) {
 
@@ -233,6 +221,8 @@ public final class OpenApiImporter
                     continue;
                 }
 
+                URI server = OpenApiServer.effective(root, pathItem, operation);
+                needsOrigin |= !server.isAbsolute();
                 ImportedRequest request =
                         parseOperation(
                                 path,
@@ -240,7 +230,7 @@ public final class OpenApiImporter
                                 operation,
                                 pathItem,
                                 root,
-                                serverUrl
+                                server
                         );
 
                 List<String> tags =
@@ -261,6 +251,7 @@ public final class OpenApiImporter
                 }
             }
         }
+        return needsOrigin;
     }
 
     private ImportedRequest parseOperation(
@@ -269,7 +260,7 @@ public final class OpenApiImporter
             JsonNode operation,
             JsonNode pathItem,
             JsonNode root,
-            String serverUrl
+            URI server
     ) {
         String name =
                 readOperationName(
@@ -278,11 +269,7 @@ public final class OpenApiImporter
                         path
                 );
 
-        String url =
-                buildUrl(
-                        serverUrl,
-                        path
-                );
+        String url = OpenApiServer.requestUrl(server, path);
 
         Map<String, String> queryParameters =
                 parseParameters(
@@ -852,55 +839,6 @@ public final class OpenApiImporter
         }
 
         return current;
-    }
-
-    private String parseServerUrl(
-            JsonNode servers
-    ) {
-        if (servers == null
-                || !servers.isArray()
-                || servers.isEmpty()) {
-            return "";
-        }
-
-        JsonNode server =
-                servers.get(0);
-
-        if (server == null
-                || !server.isObject()) {
-            return "";
-        }
-
-        return readText(
-                server,
-                "url",
-                ""
-        );
-    }
-
-    private String buildUrl(
-            String serverUrl,
-            String path
-    ) {
-        if (serverUrl == null
-                || serverUrl.isBlank()) {
-            return path;
-        }
-
-        if (serverUrl.endsWith("/")
-                && path.startsWith("/")) {
-            return serverUrl.substring(
-                    0,
-                    serverUrl.length() - 1
-            ) + path;
-        }
-
-        if (!serverUrl.endsWith("/")
-                && !path.startsWith("/")) {
-            return serverUrl + "/" + path;
-        }
-
-        return serverUrl + path;
     }
 
     private String readText(

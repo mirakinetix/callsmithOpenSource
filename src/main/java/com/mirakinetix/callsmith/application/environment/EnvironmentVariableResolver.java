@@ -27,10 +27,14 @@ public final class EnvironmentVariableResolver implements VariableResolver {
         StringBuilder output = new StringBuilder();
         while (matcher.find()) {
             String name = matcher.group(1).trim();
-            String replacement = resolved.computeIfAbsent(name, key -> variableRepository
-                    .findByName(environmentId, key).map(EnvironmentVariable::value)).orElse(matcher.group());
+            String replacement = resolved.computeIfAbsent(name, key -> lookup(key, environmentId)).orElse(matcher.group());
             matcher.appendReplacement(output, Matcher.quoteReplacement(replacement));
         }
         return matcher.appendTail(output).toString();
+    }
+
+    @Override
+    public Optional<String> lookup(String name, String environmentId) {
+        return variableRepository.findByName(environmentId, name).map(EnvironmentVariable::value);
     }
 }

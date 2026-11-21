@@ -173,3 +173,24 @@ geometry, so manual packaged dialog and native file chooser checks remain.
   during synchronization. Before merging, require a maintainer-approved pull
   request, passing Windows and Ubuntu verification, and protection against force
   pushes and deletion.
+
+## P0 request dispatch remediation
+
+- HTTP-01 reproduced with two POSTs received for unresolved header variables,
+  one with an environment selected and one without. The shared request
+  service now validates and expands variables before handing the request to
+  the transport. Missing and locked variables produce a redacted error and
+  zero dispatches. Intentional literal text uses `{!{example}}` to send
+  `{{example}}`. The collection runner records failed validation and continues.
+- IMP-01 reproduced with all three operations received by the root loopback
+  server. The importer now applies operation, path, then document server
+  precedence and expands declared defaults. A malformed effective server
+  fails import. Relative paths and the default `/` require a user-supplied
+  absolute URL when importing from a local file.
+- After remediation, the root, path and operation fixtures each received
+  exactly their intended request, and invalid or unresolved cases sent
+  nothing. A runner fixture sent only its second, valid request and reported
+  the rejected POST without including the protected value.
+- Local Maven verify passed 204 tests with zero failures and errors and six
+  opt-in tests skipped. The six opt-in Windows JavaFX tests passed separately.
+  These tests used loopback endpoints and disposable files or databases.

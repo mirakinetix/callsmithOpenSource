@@ -155,6 +155,38 @@ class CollectionRunnerIntegrationTest {
     }
 
     @Test
+    void blocksInvalidSavedPostAndContinuesWithTheNextRequestOnce() throws Exception {
+        var fixture = new Fixture();
+        var hits = new CopyOnWriteArrayList<String>();
+        var endpoint = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
+        endpoint.createContext("/", exchange -> {
+            hits.add(exchange.getRequestMethod() + " " + exchange.getRequestURI());
+            respond(exchange, 200);
+        });
+        endpoint.start();
+        try {
+            String origin = "http://127.0.0.1:" + endpoint.getAddress().getPort();
+            fixture.workspace.saveRequest(new SavedRequest("invalid", "collection", null, "Invalid", "POST",
+                    origin + "/invalid", Map.of("Authorization", "Bearer {{token}}"),
+                    Map.of(), "{{missing}}", 0, NOW, NOW));
+            fixture.save("valid", null, origin + "/valid", 2);
+            var steps = new CopyOnWriteArrayList<CollectionRunner.Step>();
+            var result = fixture.runner(Duration.ofSeconds(5)).run(fixture.collection, "env", () -> false,
+                    count -> assertEquals(2, count), steps::add);
+            assertEquals(List.of("GET /valid"), hits);
+            assertEquals(1, result.failed());
+            assertEquals(1, result.passed());
+            assertTrue(steps.getFirst().detail().contains("undefined"));
+            assertNull(steps.getFirst().status());
+            assertFalse(steps.toString().contains("private-fixture-token"));
+            assertFalse(steps.toString().contains("{{missing}}"));
+        } finally {
+            endpoint.stop(0);
+            fixture.storage.lock();
+        }
+    }
+
+    @Test
     void preservesAssertionsByRequestIdentityOnReopenAndMoveAndCascadesDeletion() throws Exception {
         var fixture = new Fixture();
         var saved = fixture.save("fixture", null, "http://localhost/fixture", 1);

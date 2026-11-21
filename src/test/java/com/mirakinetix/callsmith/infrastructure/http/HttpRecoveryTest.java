@@ -57,6 +57,7 @@ class HttpRecoveryTest {
     private HttpServer server;
     private HttpServer destination;
     private final AtomicInteger destinationHits = new AtomicInteger();
+    private final AtomicInteger echoHits = new AtomicInteger();
     private final JavaHttpRequestExecutor executor = new JavaHttpRequestExecutor();
 
     @BeforeEach
@@ -68,12 +69,16 @@ class HttpRecoveryTest {
             reply(exchange, "text/plain", "unexpected request".getBytes(StandardCharsets.UTF_8));
         });
         server.createContext("/echo", exchange -> {
+            echoHits.incrementAndGet();
             byte[] bytes = exchange.getRequestBody().readAllBytes();
             exchange.getResponseHeaders().set("X-Method", exchange.getRequestMethod());
             exchange.getResponseHeaders().set("X-Request-Bytes", Integer.toString(bytes.length));
             echoHeader(exchange, "Content-Type", "X-Request-Type");
             echoHeader(exchange, "Authorization", "X-Request-Auth");
             echoHeader(exchange, "X-Api-Key", "X-Request-Key");
+            echoHeader(exchange, "X-Metadata", "X-Request-Metadata");
+            String query = exchange.getRequestURI().getRawQuery();
+            if (query != null) exchange.getResponseHeaders().set("X-Request-Query", query);
             if (exchange.getRequestMethod().equals("HEAD")) {
                 exchange.sendResponseHeaders(200, -1);
                 exchange.close();
@@ -238,6 +243,76 @@ class HttpRecoveryTest {
     }
 
     @Test
+    void rejectsMissingVariablesBeforeSendingPost() {
+        var service = new HttpRequestService(executor, (value, environment) -> value);
+        var request = new HttpRequest("POST", url("/echo"), Map.of("X-Fixture", "{{missing}}"), Map.of(), "sample");
+        assertAll(
+                () -> assertEquals(VARIABLE_MISSING, assertThrows(HttpFailure.class,
+                        () -> service.execute(request, "fixture")).kind()),
+                () -> assertEquals(VARIABLE_ENVIRONMENT, assertThrows(HttpFailure.class,
+                        () -> service.execute(request)).kind()),
+                () -> assertEquals(0, echoHits.get()));
+    }
+
+    @Test
+    void rejectsMissingVariablesInEverySupportedRequestField() {
+        var service = new HttpRequestService(executor, (value, environment) -> value);
+        String absent = "{{missing}}";
+        String target = url("/echo");
+        var cases = List.of(
+                new HttpRequest("POST", target + "?raw=" + absent, Map.of(), Map.of(), "body"),
+                new HttpRequest("POST", target, Map.of(absent, "value"), Map.of(), null),
+                new HttpRequest("POST", target, Map.of(), Map.of(absent, "value"), null),
+                new HttpRequest("POST", target, Map.of(), Map.of("name", absent), null),
+                new HttpRequest("DELETE", target, Map.of(), Map.of(), absent),
+                withAuth("/echo", auth(API_HEADER, absent, "credential")),
+                withAuth("/echo", auth(API_QUERY, "key", absent)),
+                post(null, options(FORM, Authentication.NONE, List.of(new Field(absent, "value")), null)),
+                post(null, options(MULTIPART, Authentication.NONE, List.of(new Field("name", absent)), null)));
+        for (var request : cases) {
+            assertEquals(VARIABLE_MISSING,
+                    assertThrows(HttpFailure.class, () -> service.execute(request, "fixture")).kind());
+        }
+        assertEquals(0, echoHits.get());
+        assertEquals(0, destinationHits.get());
+    }
+
+    @Test
+    void sendsResolvedFieldsAndIntentionalLiteralOnlyToSelectedLoopback() throws IOException {
+        Map<String, String> values = Map.of("{{target}}", origin(server), "{{header}}", "X-Metadata",
+                "{{query}}", "kind", "{{value}}", "sample", "{{auth}}", "X-Api-Key",
+                "{{token}}", "fixture-token", "{{field}}", "attachment");
+        var service = new HttpRequestService(executor, (value, environment) -> values.getOrDefault(value, value));
+        var request = new HttpRequest("POST", "{{target}}/echo?base={{value}}",
+                Map.of("{{header}}", "{{value}}"), Map.of("{{query}}", "{{value}}"),
+                "{\"value\":\"{{value}}\",\"literal\":\"{!{example}}\"}",
+                options(JSON, auth(API_HEADER, "{{auth}}", "{{token}}"), List.of(), null));
+        var response = service.execute(request, "fixture");
+        assertEquals("POST", response.headers().get("x-method"));
+        assertEquals("sample", response.headers().get("x-request-metadata"));
+        assertEquals("fixture-token", response.headers().get("x-request-key"));
+        assertEquals("base=sample&kind=sample", response.headers().get("x-request-query"));
+        assertEquals("{\"value\":\"sample\",\"literal\":\"{{example}}\"}", response.body());
+        assertNull(response.url());
+
+        var literal = new HttpRequest("POST", url("/echo"), Map.of(), Map.of(), "<item>{!{example}}</item>");
+        assertEquals("<item>{{example}}</item>", service.execute(literal).body());
+        var encoded = post(null, options(FORM, Authentication.NONE,
+                List.of(new Field("{{query}}", "{{value}}")), null));
+        assertEquals("kind=sample", service.execute(encoded, "fixture").body());
+
+        Path payload = Files.writeString(temporary.resolve("fixture.txt"), "upload fixture");
+        var upload = SelectedUpload.select(payload, "{{field}}");
+        var multipart = post(null, options(MULTIPART, Authentication.NONE, List.of(), upload));
+        assertTrue(new String(service.execute(multipart, "fixture").bytes(), StandardCharsets.UTF_8)
+                .contains("name=\"attachment\""));
+        assertEquals(VARIABLE_MISSING, assertThrows(HttpFailure.class, () -> service.execute(post(null,
+                options(MULTIPART, Authentication.NONE, List.of(), upload.withField("{{missing}}"))), "fixture")).kind());
+        assertEquals(4, echoHits.get());
+        assertEquals(0, destinationHits.get());
+    }
+
+    @Test
     void protectedEnvironmentCredentialResolvesOnlyWhileUnlocked() {
         var db = new SqliteDatabase(temporary.resolve("workspace.db"));
         new CallsmithDatabase(db, new MigrationRunner()).initialize();
@@ -251,9 +326,14 @@ class HttpRecoveryTest {
         var request = withAuth("/echo", auth(BEARER, "", "{{token}}"));
         assertEquals("Bearer private-fixture", service.execute(request, "env").headers().get("x-request-auth"));
         storage.lock();
-        var failure = assertThrows(IllegalStateException.class, () -> service.execute(request, "env"));
+        var failure = assertThrows(HttpFailure.class, () -> service.execute(request, "env"));
+        assertEquals(VARIABLE_UNAVAILABLE, failure.kind());
         assertFalse(failure.getMessage().contains("private-fixture"));
+        assertEquals(1, echoHits.get());
         assertNull(variables.findSummariesByEnvironmentId("env").getFirst().value());
+        storage.unlock("fixture-only passphrase".toCharArray());
+        assertEquals("Bearer private-fixture", service.execute(request, "env").headers().get("x-request-auth"));
+        assertEquals(2, echoHits.get());
     }
 
     @Test

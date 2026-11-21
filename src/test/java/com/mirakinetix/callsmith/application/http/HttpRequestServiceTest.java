@@ -1,18 +1,21 @@
 package com.mirakinetix.callsmith.application.http;
 
 import com.mirakinetix.callsmith.application.environment.VariableResolver;
+import com.mirakinetix.callsmith.domain.http.HttpFailure;
 import com.mirakinetix.callsmith.domain.http.HttpRequest;
 import com.mirakinetix.callsmith.domain.http.HttpResponse;
 import org.junit.jupiter.api.Test;
 
 import java.util.LinkedHashMap;
 import java.util.Map;
+import java.util.Optional;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 class HttpRequestServiceTest {
@@ -31,8 +34,7 @@ class HttpRequestServiceTest {
 
     @Test
     void shouldExecuteRequestWithoutEnvironment() {
-        HttpRequest request =
-                createRequest();
+        var request = new HttpRequest("GET", "https://api.example.com/users", Map.of(), Map.of(), null);
 
         HttpResponse response =
                 createResponse();
@@ -58,7 +60,7 @@ class HttpRequestServiceTest {
         var request = new HttpRequest("GET", "https://example.test/{{key}}", Map.of(), Map.of(), null);
         var response = new HttpResponse(200, "OK", Map.of(), fictional, 10, 20,
                 "https://example.test/" + fictional);
-        when(variableResolver.resolve(request.url(), "env-1")).thenReturn(response.url());
+        when(variableResolver.lookup("key", "env-1")).thenReturn(Optional.of(fictional));
         when(requestExecutor.execute(any(HttpRequest.class))).thenReturn(response)
                 .thenThrow(new IllegalArgumentException("Failed at " + response.url()));
 
@@ -80,26 +82,8 @@ class HttpRequestServiceTest {
         HttpRequest request =
                 createRequest();
 
-        when(variableResolver.resolve(
-                eq("https://{{host}}/users/{{userId}}"),
-                eq("env-1")
-        )).thenReturn(
-                "https://api.example.com/users/123"
-        );
-
-        when(variableResolver.resolve(
-                eq("X-Test"),
-                eq("env-1")
-        )).thenReturn(
-                "X-Test"
-        );
-
-        when(variableResolver.resolve(
-                eq("request-value"),
-                eq("env-1")
-        )).thenReturn(
-                "request-value"
-        );
+        when(variableResolver.lookup("host", "env-1")).thenReturn(Optional.of("api.example.com"));
+        when(variableResolver.lookup("userId", "env-1")).thenReturn(Optional.of("123"));
 
         when(requestExecutor.execute(
                 any(HttpRequest.class)
@@ -150,47 +134,10 @@ class HttpRequestServiceTest {
                         "{\"name\":\"{{name}}\"}"
                 );
 
-        when(variableResolver.resolve(
-                eq("https://{{host}}/users"),
-                eq("env-1")
-        )).thenReturn(
-                "https://api.example.com/users"
-        );
-
-        when(variableResolver.resolve(
-                eq("Authorization"),
-                eq("env-1")
-        )).thenReturn(
-                "Authorization"
-        );
-
-        when(variableResolver.resolve(
-                eq("Bearer {{token}}"),
-                eq("env-1")
-        )).thenReturn(
-                "Bearer secret-token"
-        );
-
-        when(variableResolver.resolve(
-                eq("user"),
-                eq("env-1")
-        )).thenReturn(
-                "user"
-        );
-
-        when(variableResolver.resolve(
-                eq("{{userId}}"),
-                eq("env-1")
-        )).thenReturn(
-                "123"
-        );
-
-        when(variableResolver.resolve(
-                eq("{\"name\":\"{{name}}\"}"),
-                eq("env-1")
-        )).thenReturn(
-                "{\"name\":\"Devdutt\"}"
-        );
+        when(variableResolver.lookup("host", "env-1")).thenReturn(Optional.of("api.example.com"));
+        when(variableResolver.lookup("token", "env-1")).thenReturn(Optional.of("secret-token"));
+        when(variableResolver.lookup("userId", "env-1")).thenReturn(Optional.of("123"));
+        when(variableResolver.lookup("name", "env-1")).thenReturn(Optional.of("Devdutt"));
 
         when(requestExecutor.execute(
                 any(HttpRequest.class)
@@ -231,42 +178,18 @@ class HttpRequestServiceTest {
     }
 
     @Test
-    void shouldExecuteOriginalRequestWhenEnvironmentIdIsBlank() {
-        HttpRequest request =
-                createRequest();
-
-        when(requestExecutor.execute(request))
-                .thenReturn(createResponse());
-
-        service.execute(
-                request,
-                " "
-        );
-
-        verify(requestExecutor)
-                .execute(request);
+    void rejectsReferencesWhenEnvironmentIdIsBlank() {
+        var failure = assertThrows(HttpFailure.class, () -> service.execute(createRequest(), " "));
+        assertEquals(HttpFailure.Kind.VARIABLE_ENVIRONMENT, failure.kind());
+        verifyNoInteractions(requestExecutor, variableResolver);
     }
 
     @Test
-    void shouldExecuteOriginalRequestWhenVariableResolverIsUnavailable() {
-        HttpRequest request =
-                createRequest();
-
-        HttpRequestService serviceWithoutResolver =
-                new HttpRequestService(
-                        requestExecutor
-                );
-
-        when(requestExecutor.execute(request))
-                .thenReturn(createResponse());
-
-        serviceWithoutResolver.execute(
-                request,
-                "env-1"
-        );
-
-        verify(requestExecutor)
-                .execute(request);
+    void rejectsReferencesWhenVariableResolverIsUnavailable() {
+        var serviceWithoutResolver = new HttpRequestService(requestExecutor);
+        var failure = assertThrows(HttpFailure.class, () -> serviceWithoutResolver.execute(createRequest(), "env-1"));
+        assertEquals(HttpFailure.Kind.VARIABLE_UNAVAILABLE, failure.kind());
+        verifyNoInteractions(requestExecutor);
     }
 
     private HttpRequest createRequest() {

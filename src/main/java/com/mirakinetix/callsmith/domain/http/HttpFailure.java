@@ -4,6 +4,9 @@ package com.mirakinetix.callsmith.domain.http;
 public final class HttpFailure extends IllegalStateException {
     public enum Kind {
         INVALID("Invalid HTTP request. Check the URL, method and headers."),
+        VARIABLE_ENVIRONMENT("Select an environment to resolve request variables before sending."),
+        VARIABLE_MISSING("A request variable is undefined in the selected environment. Define it before sending."),
+        VARIABLE_UNAVAILABLE("A request variable could not be read. Unlock Secret Storage if needed and check the selected environment."),
         AUTH_CONFLICT("The authentication helper conflicts with an existing credential."),
         AUTH_INVALID("Complete the selected authentication fields with valid values."),
         BODY("The selected request body format conflicts with its fields or Content-Type."),
