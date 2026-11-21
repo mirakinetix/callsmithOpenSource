@@ -242,6 +242,14 @@ geometry, so manual packaged dialog and native file chooser checks remain.
   uploads reports only because the repository is public. The macOS jobs
   check hardware architecture, staged files, runtime legal files and the
   approved ICNS inside the mounted images.
+- The [Intel and Apple Silicon packaging run](https://github.com/mirakinetix/callsmithOpenSource/actions/runs/44928802496)
+  passed at a9be051. Each job built and mounted Callsmith 1.0.0, checked the
+  launcher and runtime Mach-O architecture, and matched 32 installed application,
+  library, and notice files against the staging inputs. The Intel image
+  contains the mac JavaFX classifier and the Apple Silicon image contains
+  mac-aarch64. Both images verified the approved ICNS and runtime legal files.
+  The first run reached the architecture check with the lipo arguments in
+  the wrong order. The corrected run uploaded text reports only.
 - Export: NTFS tests passed. A filesystem without links is rejected before
   an existing file is moved. A disposable ZIP filesystem test preserved
   the original bytes and published no partial export. Removable and
