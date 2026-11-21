@@ -59,6 +59,7 @@ class CollectionRunnerIntegrationTest {
             if ("Bearer private-fixture-token".equals(exchange.getRequestHeaders().getFirst("Authorization"))) {
                 hit.incrementAndGet();
             }
+            exchange.getResponseHeaders().set("Content-Location", "private-fixture-token");
             respond(exchange, path.equals("/http-error") ? 503 : 200);
         });
         try (var workers = Executors.newVirtualThreadPerTaskExecutor()) {
@@ -75,7 +76,8 @@ class CollectionRunnerIntegrationTest {
                 unused = socket.getLocalPort();
             }
             fixture.save("unreachable", null, "http://localhost:" + unused, 5);
-            fixture.assertions.replace("first", List.of(new ResponseAssertion(STATUS_EQUALS, "", "200")));
+            fixture.assertions.replace("first", List.of(new ResponseAssertion(STATUS_EQUALS, "", "200"),
+                    new ResponseAssertion(HEADER_EQUALS, "CONTENT-location", "{{token}}")));
             fixture.assertions.replace("assertion-error", List.of(new ResponseAssertion(STATUS_EQUALS, "", "201")));
             fixture.assertions.replace("timeout", List.of(new ResponseAssertion(STATUS_EQUALS, "", "200")));
 

@@ -58,15 +58,13 @@ public final class AssertionEvaluator {
                         "Expected under " + limit + " ms; received " + response.elapsedMilliseconds() + " ms.");
             }
             case HEADER_EXISTS, HEADER_EQUALS -> {
-                String actual = response.headers().entrySet().stream()
-                        .filter(entry -> entry.getKey().equalsIgnoreCase(spec.target()))
-                        .map(java.util.Map.Entry::getValue).findFirst().orElse(null);
-                if (actual == null) yield result(spec, false, "Expected header; it was missing.");
+                if (!response.hasHeader(spec.target())) yield result(spec, false, "Expected header; it was missing.");
                 if (type == ResponseAssertion.Type.HEADER_EXISTS) yield result(spec, true, "Expected header was present.");
                 String wanted = expected(spec, environmentId);
-                yield wanted == null ? unresolved(spec) : result(spec, actual.equals(wanted),
-                        actual.equals(wanted) ? "Header matched the configured value."
-                                : "Expected header value differed from the received value (values hidden).");
+                if (wanted == null) yield unresolved(spec);
+                boolean matched = response.headerMatches(spec.target(), wanted);
+                yield result(spec, matched, matched ? "Header matched the configured value."
+                        : "Expected header value differed from the received value (values hidden).");
             }
             case BODY_CONTAINS, BODY_EXCLUDES -> {
                 if (response.binary() || response.body() == null) {

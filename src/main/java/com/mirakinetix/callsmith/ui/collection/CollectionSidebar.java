@@ -1,5 +1,6 @@
 package com.mirakinetix.callsmith.ui.collection;
 
+import com.mirakinetix.callsmith.application.collection.CollectionExportDestination;
 import com.mirakinetix.callsmith.application.collection.CollectionExportService;
 import com.mirakinetix.callsmith.application.collection.CollectionWorkspaceService;
 import com.mirakinetix.callsmith.application.collection.importation.CollectionImportPersistenceService;
@@ -10,6 +11,8 @@ import com.mirakinetix.callsmith.domain.collection.importation.ImportedCollectio
 import com.mirakinetix.callsmith.domain.request.SavedRequest;
 import com.mirakinetix.callsmith.ui.Icon;
 import com.mirakinetix.callsmith.ui.IconView;
+import javafx.beans.property.SimpleBooleanProperty;
+import javafx.concurrent.Task;
 import javafx.event.ActionEvent;
 import javafx.geometry.Insets;
 import javafx.scene.control.Alert;
@@ -54,6 +57,12 @@ public final class CollectionSidebar extends BorderPane {
     private final CollectionImportPersistenceService
             importPersistenceService;
     private final Predicate<SavedRequest> requestSelectionHandler;
+    private final SimpleBooleanProperty importRunning = new SimpleBooleanProperty();
+    private final Label importStatus = new Label();
+    private final Button cancelImport = new Button("Cancel import");
+    private boolean importCancelled;
+
+    public boolean isImportRunning() { return importRunning.get(); }
 
     private final TreeView<WorkspaceItem> treeView =
             new TreeView<>();
@@ -391,6 +400,19 @@ public final class CollectionSidebar extends BorderPane {
                         this::importCollection
                 );
 
+        importButton.disableProperty().bind(importRunning);
+        importStatus.setId("collection-import-status");
+        importStatus.setWrapText(true);
+        importStatus.visibleProperty().bind(importRunning);
+        importStatus.managedProperty().bind(importStatus.visibleProperty());
+        cancelImport.managedProperty().bind(cancelImport.visibleProperty());
+        cancelImport.setVisible(false);
+        cancelImport.setOnAction(event -> {
+            importCancelled = true;
+            cancelImport.setDisable(true);
+            importStatus.setText("Cancelling import...");
+        });
+
         Button exportButton =
                 createActionButton(
                         "Export",
@@ -455,7 +477,9 @@ public final class CollectionSidebar extends BorderPane {
         VBox header =
                 new VBox(
                         title,
-                        actions
+                        actions,
+                        importStatus,
+                        cancelImport
                 );
 
         treeView.setId("collection-tree");
@@ -924,29 +948,24 @@ public final class CollectionSidebar extends BorderPane {
             return;
         }
 
-        File exportFile =
-                ensureJsonExtension(selectedFile);
+        exportCollection(collection, selectedFile.toPath());
+    }
 
+    void exportCollection(Collection collection, Path selected) {
         try {
-            exportService.exportCollection(
-                    collection,
-                    exportFile.toPath()
-            );
-
-            showInformation(
-                    "Export successful",
-                    "Exported collection to:"
-                            + System.lineSeparator()
-                            + exportFile.getAbsolutePath()
-            );
-
+            var target = CollectionExportDestination.prepare(selected);
+            boolean replace = target.requiresConfirmation();
+            if (replace && !confirm("Replace collection export", "Replace the existing file?\n" + target.path())) {
+                return;
+            }
+            if (!replace && !target.path().equals(selected.toAbsolutePath().normalize())
+                    && !confirm("Confirm export filename", "Save the collection to:\n" + target.path())) {
+                return;
+            }
+            exportService.exportCollection(collection, target, replace);
+            showInformation("Export successful", "Exported collection to:\n" + target.path());
         } catch (RuntimeException exception) {
-            showError(
-                    "Export failed",
-                    exception.getMessage() == null
-                            ? exception.toString()
-                            : exception.getMessage()
-            );
+            showError("Export failed", exception.getMessage());
         }
     }
 
@@ -968,23 +987,6 @@ public final class CollectionSidebar extends BorderPane {
         }
 
         return safeName + ".postman_collection.json";
-    }
-
-    private File ensureJsonExtension(
-            File file
-    ) {
-        String fileName =
-                file.getName();
-
-        if (fileName.toLowerCase()
-                .endsWith(".json")) {
-            return file;
-        }
-
-        return new File(
-                file.getParentFile(),
-                fileName + ".json"
-        );
     }
 
     private Collection getSelectedCollection() {
@@ -1022,6 +1024,7 @@ public final class CollectionSidebar extends BorderPane {
     }
 
     private void importCollection() {
+        if (isImportRunning()) return;
         FileChooser fileChooser =
                 new FileChooser();
 
@@ -1056,37 +1059,66 @@ public final class CollectionSidebar extends BorderPane {
             return;
         }
 
-        try {
-            Path file =
-                    selectedFile.toPath();
+        importFile(selectedFile.toPath());
+    }
 
-            ImportedCollection importedCollection =
-                    importService.importCollection(
-                            file
-                    );
+    void importFile(Path file) {
+        if (isImportRunning()) return;
+        importRunning.set(true);
+        importCancelled = false;
+        cancelImport.setDisable(false);
+        cancelImport.setVisible(true);
+        importStatus.setText("Reading collection...");
+        var read = new Task<ImportedCollection>() {
+            @Override protected ImportedCollection call() {
+                return importService.importCollection(file);
+            }
+        };
+        read.setOnSucceeded(event -> {
+            if (importCancelled) {
+                finishImport();
+            } else {
+                persistImport(read.getValue());
+            }
+        });
+        read.setOnFailed(event -> finishImportFailure(read.getException()));
+        Thread.startVirtualThread(read);
+    }
 
-            importPersistenceService.persist(
-                    importedCollection
-            );
+    private void persistImport(ImportedCollection collection) {
+        cancelImport.setVisible(false);
+        importStatus.setText("Saving collection...");
+        var save = new Task<Void>() {
+            @Override protected Void call() {
+                importPersistenceService.persist(collection);
+                return null;
+            }
+        };
+        save.setOnSucceeded(event -> {
+            finishImport();
+            reloadAfterWrite();
+            showInformation("Import successful", "Imported collection: " + collection.name()
+                    + (collection.warnings().isEmpty() ? "" : "\n\nReview before running:\n"
+                    + String.join("\n", collection.warnings())));
+        });
+        save.setOnFailed(event -> finishImportFailure(save.getException()));
+        Thread.startVirtualThread(save);
+    }
 
-            loadCollections();
-
-            showInformation(
-                    "Import successful",
-                    "Imported collection: "
-                            + importedCollection.name()
-                            + (importedCollection.warnings().isEmpty() ? "" : "\n\nReview before running:\n"
-                            + String.join("\n", importedCollection.warnings()))
-            );
-
-        } catch (RuntimeException exception) {
-            showError(
-                    "Import failed",
-                    exception.getMessage() == null
-                            ? exception.toString()
-                            : exception.getMessage()
-            );
+    private void finishImportFailure(Throwable failure) {
+        boolean cancelled = importCancelled;
+        finishImport();
+        if (!cancelled) {
+            String message = failure instanceof IllegalArgumentException ? failure.getMessage()
+                    : "Callsmith could not finish importing the collection.";
+            showError("Import failed", message);
         }
+    }
+
+    private void finishImport() {
+        cancelImport.setVisible(false);
+        importStatus.setText("");
+        importRunning.set(false);
     }
 
     private void addChildren(TreeItem<WorkspaceItem> parent, String parentKey,

@@ -2,6 +2,8 @@ package com.mirakinetix.callsmith.infrastructure.http;
 
 import com.mirakinetix.callsmith.application.environment.EnvironmentVariableResolver;
 import com.mirakinetix.callsmith.application.http.HttpRequestService;
+import com.mirakinetix.callsmith.application.testing.AssertionEvaluator;
+import com.mirakinetix.callsmith.application.testing.ResponseAssertion;
 import com.mirakinetix.callsmith.domain.environment.Environment;
 import com.mirakinetix.callsmith.domain.environment.EnvironmentVariable;
 import com.mirakinetix.callsmith.domain.http.HttpFailure;
@@ -166,6 +168,34 @@ class HttpRecoveryTest {
         } finally {
             secure.stop(0);
         }
+    }
+
+    @Test
+    void comparesRealLocationHeadersWithoutExposingThemInReports() {
+        String location = "/fixture-private-location";
+        String contentLocation = "/fixture-private-content";
+        server.createContext("/header-rules", exchange -> {
+            exchange.getResponseHeaders().set("Location", location);
+            exchange.getResponseHeaders().set("Content-Location", contentLocation);
+            reply(exchange, "text/plain", new byte[0]);
+        });
+        var request = new HttpRequest("GET", url("/header-rules?fixture=1"), Map.of(), Map.of(), null);
+        var response = new HttpRequestService(executor).execute(request).withoutUrl();
+        var equals = ResponseAssertion.Type.HEADER_EQUALS;
+        var results = new AssertionEvaluator((value, environment) -> location).evaluate(response, List.of(
+                new ResponseAssertion(equals, "lOcAtIoN", "{{fixture}}"),
+                new ResponseAssertion(equals, "Location", "/incorrect"),
+                new ResponseAssertion(equals, "Content-Location", contentLocation),
+                new ResponseAssertion(equals, "Content-Location", "[hidden]"),
+                new ResponseAssertion(equals, "Missing", "expected"),
+                new ResponseAssertion(equals, "Malformed Header", "expected")), "fixture");
+        assertAll(
+                () -> assertEquals(List.of(true, false, true, false, false, false),
+                        results.stream().map(AssertionEvaluator.Result::passed).toList()),
+                () -> assertEquals("[hidden]", response.headers().get("location")),
+                () -> assertEquals("[hidden]", response.headers().get("content-location")),
+                () -> assertFalse(results.toString().contains("fixture-private")),
+                () -> assertFalse(response.toString().contains("fixture-private")));
     }
 
     @Test

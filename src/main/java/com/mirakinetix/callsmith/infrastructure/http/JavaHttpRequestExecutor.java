@@ -134,9 +134,7 @@ public final class JavaHttpRequestExecutor implements RequestExecutor {
     private static HttpResponse result(java.net.http.HttpResponse<byte[]> response, long start, boolean redirected) {
         byte[] payload = response.body();
         Map<String, String> headers = new LinkedHashMap<>();
-        response.headers().map().forEach((key, values) -> headers.put(key,
-                key.equalsIgnoreCase("location") || key.equalsIgnoreCase("content-location")
-                        ? "[hidden]" : String.join(", ", values)));
+        response.headers().map().forEach((key, values) -> headers.put(key, String.join(", ", values)));
         String text = ResponseContent.text(response.headers(), payload);
         return new HttpResponse(response.statusCode(), null, headers, text,
                 Duration.ofNanos(System.nanoTime() - start).toMillis(), payload.length,

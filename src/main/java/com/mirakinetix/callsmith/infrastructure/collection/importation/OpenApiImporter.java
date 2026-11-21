@@ -2,6 +2,8 @@ package com.mirakinetix.callsmith.infrastructure.collection.importation;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.ObjectReader;
+import com.mirakinetix.callsmith.application.collection.importation.CollectionImportDocument;
 import com.mirakinetix.callsmith.application.collection.importation.CollectionImporter;
 import com.mirakinetix.callsmith.domain.collection.importation.ImportedCollection;
 import com.mirakinetix.callsmith.domain.collection.importation.ImportedFolder;
@@ -9,8 +11,6 @@ import com.mirakinetix.callsmith.domain.collection.importation.ImportedRequest;
 
 import java.io.IOException;
 import java.net.URI;
-import java.nio.file.Files;
-import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -49,97 +49,60 @@ public final class OpenApiImporter
     }
 
     @Override
-    public boolean supports(Path file) {
-        if (file == null
-                || !Files.isRegularFile(file)) {
-            return false;
-        }
-
-        String fileName =
-                file.getFileName()
-                        .toString()
-                        .toLowerCase();
-
-        if (!fileName.endsWith(".json")) {
-            return false;
-        }
-
-        try {
-            JsonNode root =
-                    objectMapper.readTree(file.toFile());
-
-            return isSupportedDocument(root);
-
-        } catch (IOException exception) {
-            return false;
-        }
+    public ObjectReader documentReader() {
+        return objectMapper.reader();
     }
 
     @Override
-    public ImportedCollection importCollection(
-            Path file
-    ) {
-        if (file == null) {
-            throw new IllegalArgumentException(
-                    "Import file is required"
-            );
+    public boolean supportsDocument(JsonNode root) {
+        return isSupportedDocument(root);
+    }
+
+    @Override
+    public ImportedCollection importDocument(JsonNode root) {
+        validateDocument(root);
+
+        String collectionName =
+                readText(
+                        root.path("info"),
+                        "title",
+                        "Imported OpenAPI"
+                );
+
+        Map<String, List<ImportedRequest>>
+                taggedRequests =
+                new LinkedHashMap<>();
+
+        List<ImportedRequest> rootRequests =
+                new ArrayList<>();
+
+        JsonNode paths =
+                root.get("paths");
+
+        boolean needsOrigin = parsePaths(paths, root, taggedRequests, rootRequests);
+
+        List<ImportedFolder> folders =
+                new ArrayList<>();
+
+        taggedRequests.forEach(
+                (tag, requests) ->
+                        folders.add(
+                                new ImportedFolder(
+                                        tag,
+                                        List.of(),
+                                        requests
+                                )
+                        )
+        );
+
+        var warnings = new ArrayList<String>();
+        warnings.add("Review generated requests. OpenAPI security schemes are not applied. " +
+                "Only supported examples and schema-derived bodies and parameters are imported.");
+        if (needsOrigin) {
+            warnings.add("Some operations have a relative OpenAPI server and this local file has no HTTP origin. "
+                    + "Set an absolute URL for each of those requests before sending.");
         }
-
-        try {
-            JsonNode root =
-                    objectMapper.readTree(file.toFile());
-
-            validateDocument(root);
-
-            String collectionName =
-                    readText(
-                            root.path("info"),
-                            "title",
-                            "Imported OpenAPI"
-                    );
-
-            Map<String, List<ImportedRequest>>
-                    taggedRequests =
-                    new LinkedHashMap<>();
-
-            List<ImportedRequest> rootRequests =
-                    new ArrayList<>();
-
-            JsonNode paths =
-                    root.get("paths");
-
-            boolean needsOrigin = parsePaths(paths, root, taggedRequests, rootRequests);
-
-            List<ImportedFolder> folders =
-                    new ArrayList<>();
-
-            taggedRequests.forEach(
-                    (tag, requests) ->
-                            folders.add(
-                                    new ImportedFolder(
-                                            tag,
-                                            List.of(),
-                                            requests
-                                    )
-                            )
-            );
-
-            var warnings = new ArrayList<String>();
-            warnings.add("Review generated requests. OpenAPI security schemes are not applied. " +
-                    "Only supported examples and schema-derived bodies and parameters are imported.");
-            if (needsOrigin) {
-                warnings.add("Some operations have a relative OpenAPI server and this local file has no HTTP origin. "
-                        + "Set an absolute URL for each of those requests before sending.");
-            }
-            return new ImportedCollection(collectionName, folders, rootRequests, List.copyOf(warnings));
-
-        } catch (IOException exception) {
-            throw new IllegalArgumentException(
-                    "Unable to read OpenAPI document: "
-                            + file,
-                    exception
-            );
-        }
+        return new ImportedCollection(collectionName, folders, rootRequests, List.copyOf(warnings));
     }
 
     private boolean isSupportedDocument(
@@ -197,6 +160,9 @@ public final class OpenApiImporter
             List<ImportedRequest> rootRequests
     ) {
         boolean needsOrigin = false;
+        int resources = 0;
+        var exampleBudget = new ExampleBudget();
+        var textBudget = new CollectionImportDocument.TextBudget();
         for (Map.Entry<String, JsonNode> pathEntry :
                 paths.properties()) {
 
@@ -230,16 +196,22 @@ public final class OpenApiImporter
                                 operation,
                                 pathItem,
                                 root,
-                                server
+                                server,
+                                exampleBudget
                         );
 
                 List<String> tags =
                         parseTags(operation);
 
                 if (tags.isEmpty()) {
+                    CollectionImportDocument.checkResourceCount(++resources);
+                    textBudget.include(request);
                     rootRequests.add(request);
                 } else {
                     for (String tag : tags) {
+                        resources += taggedRequests.containsKey(tag) ? 1 : 2;
+                        CollectionImportDocument.checkResourceCount(resources);
+                        textBudget.include(request);
                         taggedRequests
                                 .computeIfAbsent(
                                         tag,
@@ -260,7 +232,8 @@ public final class OpenApiImporter
             JsonNode operation,
             JsonNode pathItem,
             JsonNode root,
-            URI server
+            URI server,
+            ExampleBudget exampleBudget
     ) {
         String name =
                 readOperationName(
@@ -288,10 +261,7 @@ public final class OpenApiImporter
                 );
 
         String body =
-                parseRequestBody(
-                        operation,
-                        root
-                );
+                parseRequestBody(operation, root, exampleBudget);
 
         return new ImportedRequest(
                 name,
@@ -499,10 +469,7 @@ public final class OpenApiImporter
         );
     }
 
-    private String parseRequestBody(
-            JsonNode operation,
-            JsonNode root
-    ) {
+    private String parseRequestBody(JsonNode operation, JsonNode root, ExampleBudget budget) {
         JsonNode requestBody =
                 operation.get("requestBody");
 
@@ -571,10 +538,7 @@ public final class OpenApiImporter
                         schema
                 );
 
-        return generateExampleFromSchema(
-                root,
-                resolvedSchema
-        );
+        return generateExampleFromSchema(root, resolvedSchema, budget, 0);
     }
 
     private JsonNode selectMediaType(
@@ -602,21 +566,15 @@ public final class OpenApiImporter
         return null;
     }
 
-    private String generateExampleFromSchema(
-            JsonNode root,
-            JsonNode schema
-    ) {
-        if (schema == null
-                || !schema.isObject()) {
-            return "";
-        }
+    private String generateExampleFromSchema(JsonNode root, JsonNode schema, ExampleBudget budget, int depth) {
+        if (schema == null || !schema.isObject()) return "";
+        budget.charge(0, depth);
 
-        JsonNode example =
-                schema.get("example");
-
-        if (example != null
-                && !example.isNull()) {
-            return scalarOrJsonText(example);
+        JsonNode example = schema.get("example");
+        if (example != null && !example.isNull()) {
+            String value = scalarOrJsonText(example);
+            budget.charge(value.length(), depth);
+            return value;
         }
 
         JsonNode type =
@@ -627,17 +585,9 @@ public final class OpenApiImporter
             return "";
         }
 
-        return switch (type.textValue()) {
-            case "object" ->
-                    generateObjectExample(
-                            root,
-                            schema
-                    );
-            case "array" ->
-                    generateArrayExample(
-                            root,
-                            schema
-                    );
+        if ("object".equals(type.textValue())) return generateObjectExample(root, schema, budget, depth);
+        if ("array".equals(type.textValue())) return generateArrayExample(root, schema, budget, depth);
+        String scalar = switch (type.textValue()) {
             case "string" ->
                     parseSchemaScalarDefault(
                             schema,
@@ -655,12 +605,11 @@ public final class OpenApiImporter
                     );
             default -> "";
         };
+        budget.charge(scalar.length(), depth);
+        return scalar;
     }
 
-    private String generateObjectExample(
-            JsonNode root,
-            JsonNode schema
-    ) {
+    private String generateObjectExample(JsonNode root, JsonNode schema, ExampleBudget budget, int depth) {
         JsonNode properties =
                 schema.get("properties");
 
@@ -687,11 +636,8 @@ public final class OpenApiImporter
                             propertySchema
                     );
 
-            String example =
-                    generateExampleFromSchema(
-                            root,
-                            resolved
-                    );
+            budget.charge(name.length(), depth);
+            String example = generateExampleFromSchema(root, resolved, budget, depth + 1);
 
             if (!example.isEmpty()) {
                 values.put(
@@ -712,27 +658,33 @@ public final class OpenApiImporter
         }
     }
 
-    private String generateArrayExample(
-            JsonNode root,
-            JsonNode schema
-    ) {
+    private String generateArrayExample(JsonNode root, JsonNode schema, ExampleBudget budget, int depth) {
         JsonNode items =
                 resolveReference(
                         root,
                         schema.get("items")
                 );
 
-        String example =
-                generateExampleFromSchema(
-                        root,
-                        items
-                );
+        budget.charge(2, depth);
+        String example = generateExampleFromSchema(root, items, budget, depth + 1);
 
         if (example.isEmpty()) {
             return "[]";
         }
 
         return "[" + example + "]";
+    }
+
+    private static final class ExampleBudget {
+        private int remainingNodes = 20_000;
+        private long remainingCharacters = 8L * 1024 * 1024;
+
+        void charge(int characters, int depth) {
+            remainingCharacters -= characters;
+            if (depth > 32 || --remainingNodes < 0 || remainingCharacters < 0) {
+                throw new IllegalArgumentException("OpenAPI generated examples exceed the size or nesting limit.");
+            }
+        }
     }
 
     private Object parseJsonValue(

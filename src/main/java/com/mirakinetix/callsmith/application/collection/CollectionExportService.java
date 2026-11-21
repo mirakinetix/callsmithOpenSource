@@ -34,17 +34,25 @@ public final class CollectionExportService {
             Collection collection,
             Path file
     ) {
+        var destination = CollectionExportDestination.prepare(file);
+        if (destination.requiresConfirmation()) {
+            throw new IllegalArgumentException("The export destination already exists. Confirm replacement or choose a new name.");
+        }
+        exportCollection(collection, destination, false);
+    }
+
+    public void exportCollection(Collection collection, CollectionExportDestination destination, boolean replace) {
         if (collection == null) {
             throw new IllegalArgumentException(
                     "Collection is required"
             );
         }
 
-        if (file == null) {
-            throw new IllegalArgumentException(
-                    "Export file is required"
-            );
+        if (destination == null) throw new IllegalArgumentException("Export file is required");
+        if (destination.requiresConfirmation() && !replace) {
+            throw new IllegalArgumentException("Replacement of the export destination was not confirmed.");
         }
+        Path file = destination.path();
 
         CollectionExporter exporter =
                 exporters.stream()
@@ -63,7 +71,7 @@ public final class CollectionExportService {
 
         exporter.exportCollection(
                 workspace,
-                file
+                replace ? destination.approveReplacement() : destination
         );
     }
 }

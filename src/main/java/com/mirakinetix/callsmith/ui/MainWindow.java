@@ -147,7 +147,7 @@ public final class MainWindow {
         collectionSidebar.setRunCollectionAction(collection -> CollectionRunDialog.show(stage, collection,
                 environmentService.findAll(), requestBuilderView.getSelectedEnvironmentId(), runner));
         stage.addEventHandler(javafx.stage.WindowEvent.WINDOW_CLOSE_REQUEST, event -> {
-            if (!requestBuilderView.allowDiscard()) {
+            if (collectionSidebar.isImportRunning() || !requestBuilderView.allowDiscard()) {
                 event.consume();
             } else {
                 requestBuilderView.cancelActiveRequest();

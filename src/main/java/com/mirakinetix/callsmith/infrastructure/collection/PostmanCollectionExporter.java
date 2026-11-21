@@ -4,6 +4,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.mirakinetix.callsmith.application.collection.CollectionExporter;
+import com.mirakinetix.callsmith.application.collection.CollectionExportDestination;
 import com.mirakinetix.callsmith.application.collection.CollectionWorkspaceService;
 import com.mirakinetix.callsmith.domain.request.SavedRequest;
 
@@ -50,7 +51,7 @@ public final class PostmanCollectionExporter
     @Override
     public void exportCollection(
             CollectionWorkspaceService.CollectionWorkspace workspace,
-            Path file
+            CollectionExportDestination destination
     ) {
         if (workspace == null) {
             throw new IllegalArgumentException(
@@ -58,7 +59,7 @@ public final class PostmanCollectionExporter
             );
         }
 
-        if (file == null) {
+        if (destination == null) {
             throw new IllegalArgumentException(
                     "Export file is required"
             );
@@ -95,24 +96,11 @@ public final class PostmanCollectionExporter
                             .writerWithDefaultPrettyPrinter()
                             .writeValueAsString(root);
 
-            Path target = file.toAbsolutePath();
-            Path staging = Files.createTempFile(target.getParent(), ".callsmith-export-", ".json");
-            try {
-                Files.writeString(staging, json, StandardCharsets.UTF_8);
-                try {
-                    Files.move(staging, target, java.nio.file.StandardCopyOption.ATOMIC_MOVE,
-                            java.nio.file.StandardCopyOption.REPLACE_EXISTING);
-                } catch (java.nio.file.AtomicMoveNotSupportedException exception) {
-                    Files.move(staging, target, java.nio.file.StandardCopyOption.REPLACE_EXISTING);
-                }
-            } finally {
-                Files.deleteIfExists(staging);
-            }
+            destination.write(path -> Files.writeString(path, json, StandardCharsets.UTF_8));
 
         } catch (IOException exception) {
             throw new IllegalStateException(
-                    "Unable to export Postman collection to: "
-                            + file,
+                    "Unable to export Postman collection to " + destination.path() + ". " + exception.getMessage(),
                     exception
             );
         }

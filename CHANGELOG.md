@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- Fixed response-header equality assertions to use received values while retaining display redaction.
+- Rejected invalid Insomnia resource graphs before saving and reported unsupported records.
+- Added final destination confirmation and overwrite protection to Postman export.
+- Moved collection import to background workers and bounded file size, resource count, and nesting.
+
 - Blocked unresolved request variables before individual and collection sends,
   and added explicit syntax for sending literal placeholder text.
 - Applied OpenAPI operation, path and document server precedence and blocked

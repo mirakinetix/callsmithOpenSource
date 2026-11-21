@@ -194,3 +194,30 @@ geometry, so manual packaged dialog and native file chooser checks remain.
 - Local Maven verify passed 204 tests with zero failures and errors and six
   opt-in tests skipped. The six opt-in Windows JavaFX tests passed separately.
   These tests used loopback endpoints and disposable files or databases.
+
+## P1 remediation part A
+
+- TEST-01 reproduced with two false failures and a false pass when assertions
+  read the display marker rather than the received redirect-related header.
+  Comparisons now use the received value with case-insensitive names. The
+  response view, diagnostics, and run summaries keep these header values hidden.
+- IMP-02 reproduced when an Insomnia collection with an unknown parent saved
+  only its reachable request. Import now validates resource IDs, parent
+  types, and reachability before persistence. Existing workspaces passed the
+  preservation checks. Unsupported resources are named as a count in warnings.
+- FILE-01 reproduced when an existing normalized filename was replaced by
+  the export path without authorization. The UI confirms the actual destination.
+  Publication stages complete JSON and uses a no-replace link. Confirmed
+  replacement checks the existing file before using that same publication step.
+  Tests cover cancelled confirmation, write failures, existing files, and a
+  destination created or changed during staging. A filesystem that cannot
+  safely publish through a hard link requires a different destination.
+- DESK-01 reproduced when an oversized file reached importer detection. JSON is
+  now read once with an 8 MiB input ceiling, bounded parser limits, a 5,000
+  resource limit, and 64 folder levels. The desktop reads and saves on separate
+  workers. Cancel during reading prevents persistence. Once saving starts,
+  the SQLite transaction finishes before another import or close.
+- Local Maven verify passed 219 tests, with zero failures and errors and nine
+  opt-in tests skipped. All nine opt-in Windows JavaFX tests passed separately.
+  The new tests exercise JavaFX dialogs and worker behavior with disposable
+  directories and databases. Native chooser checks remain open.

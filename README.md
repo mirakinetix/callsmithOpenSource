@@ -125,7 +125,8 @@ and **Duplicate Request** create separate requests with their own rules. Select
 **Send** to see each rule's pass or fail result in the response pane.
 
 - HTTP status can equal one code or fall within an inclusive range.
-- Header rules check existence or exact value using a case-insensitive header name.
+- Header rules check existence or the received value using a case-insensitive header name.
+  Location and Content-Location stay hidden in the response view and comparison values stay out of reports.
 - Text rules check whether the decoded body contains or excludes a substring.
 - JSON rules check a property or compare a typed JSON value. Use a JSON Pointer
   such as /items/0/id. Escape a slash within a property name as ~1 and a tilde as
@@ -159,6 +160,22 @@ already have processed a request. Run reports are kept in the open dialog.
 | OpenAPI 3.x JSON | Import supported HTTP operations using their URLs, methods, supported parameters and a representative request body where available. |
 | Insomnia legacy JSON with a resources array | Import supported requests and nested folders in resource order, including headers, query values and text bodies. |
 
+Imports run in the background. One import can be active at a time. **Cancel import**
+is available while reading and validating the file. Once saving starts, Callsmith
+finishes the SQLite transaction before enabling another import or closing.
+
+JSON collection files are limited to 8 MiB, 5,000 resources, and 64 folder levels.
+Malformed JSON and collections that exceed parser or expanded-data limits are
+rejected before saving. Insomnia rejects duplicate IDs, folders or requests with
+invalid parents, and unreachable records. Unsupported resources produce a warning.
+An Insomnia file without a workspace can still contain root requests and folders.
+
+Callsmith confirms the final export path when it adds the .json suffix and asks
+before replacing an existing file. If that destination changes after selection,
+choose the filename again. Export stages the JSON before publication and requires
+a filesystem that supports safe publication using hard links. Choose a local
+destination if a filesystem cannot safely publish the export.
+
 OpenAPI uses the first server at the operation level, then the path level, then
 the document level. A missing declaration at every level or an empty effective
 server list uses the default `/`. Server variable defaults are expanded.
@@ -187,7 +204,7 @@ To run the Windows JavaFX regression tests on a desktop, use this PowerShell
 command from the checkout:
 
 ```powershell
-mvn -B '-Dcallsmith.desktop.tests=true' '-Dtest=WorkspaceDesktopTest,RequestDesktopTest,IconDesktopTest' test
+mvn -B '-Dcallsmith.desktop.tests=true' '-Dtest=WorkspaceDesktopTest,RequestDesktopTest,IconDesktopTest,CollectionFilesDesktopTest' test
 ```
 
 The tests create their own SQLite databases and loopback endpoints. The platform

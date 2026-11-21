@@ -2,14 +2,12 @@ package com.mirakinetix.callsmith.infrastructure.collection.importation;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.ObjectReader;
 import com.mirakinetix.callsmith.application.collection.importation.CollectionImporter;
 import com.mirakinetix.callsmith.domain.collection.importation.ImportedCollection;
 import com.mirakinetix.callsmith.domain.collection.importation.ImportedFolder;
 import com.mirakinetix.callsmith.domain.collection.importation.ImportedRequest;
 
-import java.io.IOException;
-import java.nio.file.Files;
-import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -36,113 +34,55 @@ public final class PostmanCollectionImporter
     }
 
     @Override
-    public boolean supports(Path file) {
-        if (file == null
-                || !Files.isRegularFile(file)) {
-            return false;
-        }
-
-        String fileName =
-                file.getFileName()
-                        .toString()
-                        .toLowerCase();
-
-        if (!fileName.endsWith(".json")) {
-            return false;
-        }
-
-        try {
-            JsonNode root =
-                    objectMapper.readTree(file.toFile());
-
-            if (root == null || !root.isObject()) {
-                return false;
-            }
-
-            JsonNode info =
-                    root.get("info");
-
-            if (info == null || !info.isObject()) {
-                return false;
-            }
-
-            JsonNode schema =
-                    info.get("schema");
-
-            if (schema == null
-                    || !schema.isTextual()) {
-                return false;
-            }
-
-            return schema.textValue()
-                    .startsWith(
-                            POSTMAN_SCHEMA_PREFIX
-                    );
-
-        } catch (IOException exception) {
-            return false;
-        }
+    public ObjectReader documentReader() {
+        return objectMapper.reader();
     }
 
     @Override
-    public ImportedCollection importCollection(
-            Path file
-    ) {
-        if (file == null) {
-            throw new IllegalArgumentException(
-                    "Import file is required"
-            );
-        }
+    public boolean supportsDocument(JsonNode root) {
+        var schema = root.path("info").path("schema");
+        return schema.isTextual() && schema.textValue().startsWith(POSTMAN_SCHEMA_PREFIX);
+    }
 
-        try {
-            JsonNode root =
-                    objectMapper.readTree(file.toFile());
+    @Override
+    public ImportedCollection importDocument(JsonNode root) {
+        validateRoot(root);
 
-            validateRoot(root);
-
-            String collectionName =
-                    readText(
-                            root.path("info"),
-                            "name",
-                            "Imported Postman Collection"
-                    );
-
-            List<ImportedFolder> folders =
-                    new ArrayList<>();
-
-            List<ImportedRequest> rootRequests =
-                    new ArrayList<>();
-
-            var warnings = new java.util.LinkedHashSet<String>();
-            if (root.hasNonNull("auth")) warnings.add("Collection authentication was omitted.");
-            if (root.hasNonNull("event")) warnings.add("Postman scripts were omitted and were not run.");
-            if (root.hasNonNull("variable")) warnings.add("Postman variable definitions were omitted. Configure matching Callsmith variables.");
-            boolean separateUrlFields = root.path("x-callsmith-url-parts").asBoolean(false);
-            JsonNode items = root.get("item");
-
-            if (items != null && items.isArray()) {
-                parseItems(
-                        items,
-                        folders,
-                        rootRequests,
-                        warnings, separateUrlFields, 0
+        String collectionName =
+                readText(
+                        root.path("info"),
+                        "name",
+                        "Imported Postman Collection"
                 );
-            }
 
-            return new ImportedCollection(
-                    collectionName,
+        List<ImportedFolder> folders =
+                new ArrayList<>();
+
+        List<ImportedRequest> rootRequests =
+                new ArrayList<>();
+
+        var warnings = new java.util.LinkedHashSet<String>();
+        if (root.hasNonNull("auth")) warnings.add("Collection authentication was omitted.");
+        if (root.hasNonNull("event")) warnings.add("Postman scripts were omitted and were not run.");
+        if (root.hasNonNull("variable")) warnings.add("Postman variable definitions were omitted. Configure matching Callsmith variables.");
+        boolean separateUrlFields = root.path("x-callsmith-url-parts").asBoolean(false);
+        JsonNode items = root.get("item");
+
+        if (items != null && items.isArray()) {
+            parseItems(
+                    items,
                     folders,
                     rootRequests,
-                    List.copyOf(warnings)
-            );
-
-        } catch (IOException exception) {
-            throw new IllegalArgumentException(
-                    "Unable to read Postman collection: "
-                            + file,
-                    exception
+                    warnings, separateUrlFields, 0
             );
         }
+
+        return new ImportedCollection(
+                collectionName,
+                folders,
+                rootRequests,
+                List.copyOf(warnings)
+        );
     }
 
     private void validateRoot(

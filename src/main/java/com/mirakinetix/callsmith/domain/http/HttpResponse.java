@@ -1,5 +1,6 @@
 package com.mirakinetix.callsmith.domain.http;
 
+import java.util.LinkedHashMap;
 import java.util.Map;
 
 public record HttpResponse(int statusCode, String reasonPhrase, Map<String, String> headers,
@@ -12,6 +13,25 @@ public record HttpResponse(int statusCode, String reasonPhrase, Map<String, Stri
     public HttpResponse {
         headers = Map.copyOf(headers);
         bytes = bytes == null ? null : bytes.clone();
+    }
+
+    @Override public Map<String, String> headers() {
+        if (!hasHeader("Location") && !hasHeader("Content-Location")) return headers;
+
+        Map<String, String> display = new LinkedHashMap<>(headers);
+        display.replaceAll((name, value) -> name.equalsIgnoreCase("Location") || name.equalsIgnoreCase("Content-Location")
+                ? "[hidden]" : value);
+        return Map.copyOf(display);
+    }
+
+    public boolean hasHeader(String name) {
+        return headers.keySet().stream().anyMatch(key -> key.equalsIgnoreCase(name));
+    }
+
+    /** Tests the received value without providing access to display-redacted headers. */
+    public boolean headerMatches(String name, String expected) {
+        return headers.entrySet().stream()
+                .anyMatch(header -> header.getKey().equalsIgnoreCase(name) && header.getValue().equals(expected));
     }
 
     @Override public byte[] bytes() { return bytes == null ? null : bytes.clone(); }

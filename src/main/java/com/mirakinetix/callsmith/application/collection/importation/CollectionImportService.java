@@ -6,42 +6,21 @@ import java.nio.file.Path;
 import java.util.List;
 
 public final class CollectionImportService {
-
     private final List<CollectionImporter> importers;
 
-    public CollectionImportService(
-            List<CollectionImporter> importers
-    ) {
+    public CollectionImportService(List<CollectionImporter> importers) {
         if (importers == null || importers.isEmpty()) {
-            throw new IllegalArgumentException(
-                    "At least one collection importer is required"
-            );
+            throw new IllegalArgumentException("At least one collection importer is required");
         }
-
         this.importers = List.copyOf(importers);
     }
 
-    public ImportedCollection importCollection(
-            Path file
-    ) {
-        if (file == null) {
-            throw new IllegalArgumentException(
-                    "Import file is required"
-            );
-        }
-
-        CollectionImporter importer =
-                importers.stream()
-                        .filter(candidate ->
-                                candidate.supports(file))
-                        .findFirst()
-                        .orElseThrow(() ->
-                                new IllegalArgumentException(
-                                        "Unsupported collection format: "
-                                                + file.getFileName()
-                                )
-                        );
-
-        return importer.importCollection(file);
+    public ImportedCollection importCollection(Path file) {
+        var document = CollectionImportDocument.read(file);
+        CollectionImporter importer = importers.stream()
+                .filter(candidate -> candidate.supportsDocument(document))
+                .findFirst()
+                .orElseThrow(() -> new IllegalArgumentException("Unsupported collection format: " + file.getFileName()));
+        return CollectionImportDocument.validated(importer.importDocument(document));
     }
 }
