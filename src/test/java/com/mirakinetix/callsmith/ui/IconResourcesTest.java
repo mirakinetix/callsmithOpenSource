@@ -53,7 +53,7 @@ class IconResourcesTest {
         assertEquals(List.of(16, 24, 32, 48, 64, 128, 256), sizes);
         String winScript = Files.readString(windows.resolve("build-app-image.ps1"));
         assertTrue(winScript.contains("\"Callsmith.ico\""));
-        assertTrue(winScript.contains("--icon $AppIcon"));
+        assertTrue(winScript.contains("\"--icon\", $AppIcon"));
 
         Path mac = Path.of("packaging", "macos");
         byte[] icns = Files.readAllBytes(mac.resolve("Callsmith.icns"));

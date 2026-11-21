@@ -83,6 +83,18 @@ rollback to a valid old backup, or changes to ordinary SQLite content.
   `{{apiToken}}` in saved requests. Collection exports include raw request
   fields and can contain inline credentials.
 
+## Dependency security verification
+
+Callsmith uses Jackson Core and Databind 2.21.8 on Jackson's supported 2.21
+line. Its compatible annotations artifact is version 2.21. The selected
+version is outside the published affected ranges for
+[Core property-name limits](https://github.com/FasterXML/jackson-core/security/advisories/GHSA-649p-m576-vr99),
+[Databind Path binding](https://github.com/FasterXML/jackson-databind/security/advisories/GHSA-wjgm-6hv5-3cvf),
+[forward-reference completion](https://github.com/FasterXML/jackson-databind/security/advisories/GHSA-cxp5-3px4-pw24),
+and the later [polymorphic validation advisory](https://github.com/FasterXML/jackson-databind/security/advisories/GHSA-m8xf-2cr7-77ph).
+The collection reader retains its application limits. Regression fixtures check
+bounded oversized property names in UTF-8 and UTF-16.
+
 ## HTTP redirect and response boundaries
 
 Redirects are followed only within the same scheme, host and port. Redirect

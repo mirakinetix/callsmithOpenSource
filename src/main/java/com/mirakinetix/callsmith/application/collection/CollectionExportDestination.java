@@ -65,6 +65,7 @@ public final class CollectionExportDestination {
                 if (existing == null) {
                     Files.createLink(path, staged);
                 } else {
+                    checkLinkSupport(staged, work.resolve("link-check"));
                     replace(staged, work.resolve("previous.json"));
                 }
             } finally {
@@ -77,10 +78,25 @@ public final class CollectionExportDestination {
         }
     }
 
+    private static void checkLinkSupport(Path staged, Path probe) throws IOException {
+        try {
+            Files.createLink(probe, staged);
+        } catch (IOException | UnsupportedOperationException exception) {
+            throw new IOException("This destination could not create a hard link for safe export. Choose another location.",
+                    exception);
+        }
+        clean(probe);
+    }
+
     private void replace(Path staged, Path previous) throws IOException {
         verifyExisting(path);
         // Claim the current file, verify what was actually moved, then publish without clobbering a new arrival.
-        Files.move(path, previous, StandardCopyOption.ATOMIC_MOVE);
+        try {
+            Files.move(path, previous, StandardCopyOption.ATOMIC_MOVE);
+        } catch (java.nio.file.AtomicMoveNotSupportedException exception) {
+            throw new IOException("This destination does not support atomic moves for replacement. Choose another location.",
+                    exception);
+        }
         try {
             verifyExisting(previous);
             if (Thread.currentThread().isInterrupted()) throw new IOException("Export was interrupted.");

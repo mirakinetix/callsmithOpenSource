@@ -171,10 +171,13 @@ invalid parents, and unreachable records. Unsupported resources produce a warnin
 An Insomnia file without a workspace can still contain root requests and folders.
 
 Callsmith confirms the final export path when it adds the .json suffix and asks
-before replacing an existing file. If that destination changes after selection,
-choose the filename again. Export stages the JSON before publication and requires
-a filesystem that supports safe publication using hard links. Choose a local
-destination if a filesystem cannot safely publish the export.
+before replacing an existing file. If the destination changes after selection,
+choose the filename again. Export stages the JSON before publication. It uses
+hard links to publish without overwriting a concurrent file and an atomic move
+for confirmed replacement. Use a writable destination that supports those
+operations, such as a local NTFS folder on Windows. Some removable or
+network-mounted destinations cannot provide them. Choose another folder if
+Callsmith reports that the destination cannot publish safely.
 
 OpenAPI uses the first server at the operation level, then the path level, then
 the document level. A missing declaration at every level or an empty effective
@@ -195,10 +198,17 @@ compatibility are outside the current import workflow.
 
 ## Platform verification
 
-The Windows x64 app image is built with the Java 25 packaging script.
-Native macOS builds target Intel and Apple Silicon and require verification on
-each architecture before distributing those artifacts. See [RECOVERY.md](RECOVERY.md)
-for the beta verification checklist.
+The native packaging scripts use Eclipse Temurin 25.0.5.1+2 and stage the
+runtime libraries resolved by Maven. The Windows script builds an x64 app
+image. The macOS script builds and verifies a DMG on its host architecture.
+Set JAVA_HOME to the pinned Temurin JDK before running either script.
+
+Application and third-party notices are in app/licenses on Windows and
+Callsmith.app/Contents/app/licenses on macOS. The bundled Java runtime retains
+its legal directory. The manual GitHub packaging jobs upload verification
+reports and leave the binaries on their runners.
+See [the notice manifest](LICENSES/THIRD-PARTY-NOTICES.md) and
+[the beta verification checklist](RECOVERY.md).
 
 To run the Windows JavaFX regression tests on a desktop, use this PowerShell
 command from the checkout:

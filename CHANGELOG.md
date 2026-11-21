@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- Updated Jackson Core and Databind to 2.21.8 and pinned the packaging and CI JDK.
+- Staged native packages from Maven's resolved libraries and included installed license and notice files.
+- Verified native package contents in the manual workflows and limited public CI uploads to build reports.
+- Checked hard-link support before moving an existing collection export for confirmed replacement.
+
 - Fixed response-header equality assertions to use received values while retaining display redaction.
 - Rejected invalid Insomnia resource graphs before saving and reported unsupported records.
 - Added final destination confirmation and overwrite protection to Postman export.

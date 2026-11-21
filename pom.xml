@@ -23,7 +23,7 @@
         <javafx.version>25</javafx.version>
         <junit.version>6.0.1</junit.version>
         <mockito.version>5.20.0</mockito.version>
-        <jackson.version>2.21.5</jackson.version>
+        <jackson.version>2.21.8</jackson.version>
         <sqlite.version>3.53.4.0</sqlite.version>
 
         <argLine></argLine>

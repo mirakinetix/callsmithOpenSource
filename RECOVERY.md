@@ -221,3 +221,33 @@ geometry, so manual packaged dialog and native file chooser checks remain.
   opt-in tests skipped. All nine opt-in Windows JavaFX tests passed separately.
   The new tests exercise JavaFX dialogs and worker behavior with disposable
   directories and databases. Native chooser checks remain open.
+
+## P1 remediation part B
+
+- DEP-01: Maven and the Windows x64 image resolved Jackson Core and Databind
+  2.21.8 with Annotations 2.21. SECURITY.md records the reviewed advisory
+  ranges. The compatibility suite also checks bounded oversized properties
+  in UTF-8 and UTF-16 collections. OpenJFX remains at 25 and SQLite JDBC
+  remains at 3.53.4.0.
+- REL-01: The package contains the application, Lucide, artwork provenance,
+  OpenJFX, and Maven dependency notices in app/licenses. The linked Java
+  runtime retains its legal directory. The Windows package verified 32
+  installed application, library, and notice files byte for byte. Legal
+  clearance for public binary distribution still requires confirmation of
+  artwork rights and provision of corresponding GPLv2 source access.
+- Windows x64 built with Temurin 25.0.5.1+2. The launcher contains all seven
+  approved ICO frames. It opened a disposable database and shut down
+  normally with exit code zero and empty stderr.
+- CI-01: All workflows use the same Temurin pin. Packaging is manual and
+  uploads reports only because the repository is public. The macOS jobs
+  check hardware architecture, staged files, runtime legal files and the
+  approved ICNS inside the mounted images.
+- Export: NTFS tests passed. A filesystem without links is rejected before
+  an existing file is moved. A disposable ZIP filesystem test preserved
+  the original bytes and published no partial export. Removable and
+  network-mounted destinations require writable hard-link support and
+  atomic moves for replacement.
+- Maven verify passed 221 tests with zero failures and errors and nine
+  opt-in tests skipped. All nine Windows JavaFX tests passed separately.
+  The Windows native chooser and taskbar checks, macOS interactive opening
+  and Gatekeeper checks, and final beta approval remain open.

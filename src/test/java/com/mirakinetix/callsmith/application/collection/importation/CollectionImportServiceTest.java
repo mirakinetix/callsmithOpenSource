@@ -123,6 +123,18 @@ class CollectionImportServiceTest {
     }
 
     @Test
+    void rejectsBoundedOversizedPropertyNamesInUtf8AndUtf16() throws IOException {
+        String input = "{\"" + "a".repeat(65_000) + "\":0}";
+        var file = directory.resolve("property.json");
+        for (var charset : List.of(java.nio.charset.StandardCharsets.UTF_8,
+                java.nio.charset.StandardCharsets.UTF_16)) {
+            Files.writeString(file, input, charset);
+            assertTrue(assertThrows(IllegalArgumentException.class, () -> service().importCollection(file))
+                    .getMessage().contains("parsing size"));
+        }
+    }
+
+    @Test
     void rejectsRecursiveOpenApiGeneratedExamplesWithoutOverflow() throws IOException {
         var file = write("""
                 {"openapi":"3.1.0","info":{"title":"Recursive fixture"},

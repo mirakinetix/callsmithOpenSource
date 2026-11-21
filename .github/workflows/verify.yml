@@ -11,6 +11,7 @@ permissions:
 jobs:
   maven-verify:
     name: Maven verify (${{ matrix.os }})
+    timeout-minutes: 15
     strategy:
       fail-fast: false
       matrix:
@@ -21,7 +22,7 @@ jobs:
       - uses: actions/setup-java@v5
         with:
           distribution: temurin
-          java-version: '25'
+          java-version-file: .java-version
           cache: maven
       - name: Run headless regression suite
         run: mvn -B verify

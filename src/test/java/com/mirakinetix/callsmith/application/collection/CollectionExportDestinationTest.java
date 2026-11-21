@@ -5,6 +5,8 @@ import org.junit.jupiter.api.io.TempDir;
 
 import java.io.IOException;
 import java.nio.file.FileAlreadyExistsException;
+import java.nio.file.FileSystems;
+import java.util.Map;
 import java.nio.file.Files;
 import java.nio.file.Path;
 
@@ -64,6 +66,26 @@ class CollectionExportDestinationTest {
             Files.writeString(file, "changed original");
         }));
         assertEquals("changed original", Files.readString(file));
+    }
+
+    @Test
+    void rejectsFilesystemsWithoutHardLinksBeforeMovingExistingExport() throws IOException {
+        Path archive = directory.resolve("no-links.zip");
+        try (var destination = FileSystems.newFileSystem(archive, Map.of("create", "true"))) {
+            Path file = Files.writeString(destination.getPath("/existing.json"), "original bytes");
+            var existing = CollectionExportDestination.prepare(file).approveReplacement();
+            var replacementFailure = assertThrows(IOException.class,
+                    () -> existing.write(staging -> Files.writeString(staging, "candidate")));
+            assertTrue(replacementFailure.getMessage().contains("hard link"));
+            assertEquals("original bytes", Files.readString(file));
+
+            var newTarget = CollectionExportDestination.prepare(destination.getPath("/new.json"));
+            assertThrows(IOException.class, () -> newTarget.write(staging -> Files.writeString(staging, "candidate")));
+            assertFalse(Files.exists(newTarget.path()));
+            try (var files = Files.list(destination.getPath("/"))) {
+                assertEquals(1, files.count());
+            }
+        }
     }
 
     @Test

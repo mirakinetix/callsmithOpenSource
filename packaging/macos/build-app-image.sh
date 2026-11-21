@@ -1,212 +1,94 @@
 #!/bin/bash
-
 set -euo pipefail
 
-PROJECT_ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
-TARGET_DIR="$PROJECT_ROOT/target"
-
+PROJECT_ROOT="$(cd "$(dirname "$0")/../.." && pwd -P)"
 PACKAGING_ROOT="$PROJECT_ROOT/packaging/macos/build"
 INPUT_DIR="$PACKAGING_ROOT/jpackage-input"
-RUNTIME_LIB_DIR="$INPUT_DIR/lib"
-
+DEPENDENCIES="$PACKAGING_ROOT/maven-runtime"
 RUNTIME_IMAGE="$PACKAGING_ROOT/runtime"
 OUTPUT_DIR="$PACKAGING_ROOT/dist"
-
-APP_NAME="Callsmith"
 APP_ICON="$PROJECT_ROOT/packaging/macos/Callsmith.icns"
+PACKAGE_FILES="$PROJECT_ROOT/packaging/PackageFiles.java"
+
+JAVA="$JAVA_HOME/bin/java"
+JLINK="$JAVA_HOME/bin/jlink"
+JPACKAGE="$JAVA_HOME/bin/jpackage"
+ARCH="$(uname -m)"
+case "$ARCH" in
+    arm64) JAVAFX_CLASSIFIER="mac-aarch64" ;;
+    x86_64) JAVAFX_CLASSIFIER="mac" ;;
+    *) echo "Unsupported macOS architecture: $ARCH" >&2; exit 1 ;;
+esac
 if [ ! -f "$APP_ICON" ]; then
     echo "Missing approved Callsmith.icns" >&2
     exit 1
 fi
-APP_VERSION="1.0.0"
-MAIN_JAR="callsmith-${APP_VERSION}.jar"
-MAIN_CLASS="com.mirakinetix.callsmith.CallsmithApplication"
+"$JAVA" "$PACKAGE_FILES" jdk
 
-ARCH="$(uname -m)"
-
-case "$ARCH" in
-    arm64)
-        JAVAFX_CLASSIFIER="mac-aarch64"
-        ;;
-    x86_64)
-        JAVAFX_CLASSIFIER="mac"
-        ;;
-    *)
-        echo "Unsupported macOS architecture: $ARCH"
-        exit 1
-        ;;
-esac
-
-echo "========================================"
-echo "Callsmith macOS Application Package"
-echo "Version: $APP_VERSION"
-echo "Architecture: $ARCH"
-echo "JavaFX classifier: $JAVAFX_CLASSIFIER"
-echo "========================================"
-echo ""
-
-# ------------------------------------------------------------
-# 1. Build application
-# ------------------------------------------------------------
-
-echo "[1/7] Building Callsmith..."
-
-cd "$PROJECT_ROOT"
-
-mvn clean package -DskipTests
-
-# ------------------------------------------------------------
-# 2. Prepare packaging directories
-# ------------------------------------------------------------
-
-echo ""
-echo "[2/7] Preparing packaging directories..."
-
-rm -rf "$PACKAGING_ROOT"
-
-mkdir -p "$RUNTIME_LIB_DIR"
+if [[ "$PACKAGING_ROOT" != "$PROJECT_ROOT/packaging/macos/build" || -L "$PACKAGING_ROOT" ]]; then
+    echo "Unexpected packaging build directory: $PACKAGING_ROOT" >&2
+    exit 1
+fi
+rm -rf -- "$PACKAGING_ROOT"
 mkdir -p "$OUTPUT_DIR"
 
-# ------------------------------------------------------------
-# 3. Copy application JAR
-# ------------------------------------------------------------
-
-echo ""
-echo "[3/7] Copying application JAR..."
-
-APPLICATION_JAR="$TARGET_DIR/$MAIN_JAR"
-
-if [ ! -f "$APPLICATION_JAR" ]; then
-    echo "Application JAR not found: $APPLICATION_JAR"
+cd "$PROJECT_ROOT"
+mvn -B -Dstyle.color=never -DskipTests package dependency:copy-dependencies \
+    -DincludeScope=runtime "-DoutputDirectory=$DEPENDENCIES"
+APP_VERSION="$(mvn -q -Dstyle.color=never org.apache.maven.plugins:maven-help-plugin:3.5.1:evaluate \
+    -Dexpression=project.version -DforceStdout)"
+if ! [[ "$APP_VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+    echo "Unable to resolve the Maven application version." >&2
     exit 1
 fi
+MAIN_JAR="callsmith-$APP_VERSION.jar"
+"$JAVA" "$PACKAGE_FILES" stage "$PROJECT_ROOT" "$DEPENDENCIES" \
+    "$PROJECT_ROOT/target/$MAIN_JAR" "$INPUT_DIR" "$JAVAFX_CLASSIFIER"
 
-cp "$APPLICATION_JAR" "$INPUT_DIR/"
+MODULES="java.base,java.desktop,java.logging,java.management,java.naming,java.net.http,java.prefs,java.scripting,java.sql,java.sql.rowset,java.xml,jdk.crypto.ec,jdk.unsupported"
+"$JLINK" --add-modules "$MODULES" --strip-debug --no-header-files --no-man-pages --compress=zip-6 --output "$RUNTIME_IMAGE"
 
-# ------------------------------------------------------------
-# 4. Copy runtime dependencies
-#
-# JavaFX platform-neutral *-25.jar files are intentionally
-# excluded.
-#
-# macOS JavaFX modules are selected according to the native
-# architecture of the GitHub Actions runner.
-# ------------------------------------------------------------
-
-echo ""
-echo "[4/7] Copying runtime dependencies..."
-
-DEPENDENCY_DIR="$TARGET_DIR/macos-packaging-lib"
-
-rm -rf "$DEPENDENCY_DIR"
-mkdir -p "$DEPENDENCY_DIR"
-
-mvn dependency:copy-dependencies \
-    -DincludeScope=runtime \
-    -DoutputDirectory="$DEPENDENCY_DIR"
-
-copy_dependency() {
-    local FILE="$1"
-
-    if [ ! -f "$DEPENDENCY_DIR/$FILE" ]; then
-        echo "Required dependency not found:"
-        echo "$DEPENDENCY_DIR/$FILE"
-        exit 1
-    fi
-
-    echo "  Copying $FILE"
-    cp "$DEPENDENCY_DIR/$FILE" "$RUNTIME_LIB_DIR/"
-}
-
-copy_dependency "jackson-annotations-2.21.jar"
-copy_dependency "jackson-core-2.21.5.jar"
-copy_dependency "jackson-databind-2.21.5.jar"
-copy_dependency "sqlite-jdbc-3.53.4.0.jar"
-
-copy_dependency "javafx-base-25-${JAVAFX_CLASSIFIER}.jar"
-copy_dependency "javafx-controls-25-${JAVAFX_CLASSIFIER}.jar"
-copy_dependency "javafx-fxml-25-${JAVAFX_CLASSIFIER}.jar"
-copy_dependency "javafx-graphics-25-${JAVAFX_CLASSIFIER}.jar"
-
-# ------------------------------------------------------------
-# 5. Create bundled Java runtime
-# ------------------------------------------------------------
-
-echo ""
-echo "[5/7] Creating bundled Java runtime..."
-
-JLINK_MODULES="java.base,java.desktop,java.logging,java.management,java.naming,java.net.http,java.prefs,java.scripting,java.sql,java.sql.rowset,java.xml,jdk.crypto.ec,jdk.unsupported"
-
-jlink \
-    --add-modules "$JLINK_MODULES" \
-    --strip-debug \
-    --no-header-files \
-    --no-man-pages \
-    --compress=zip-6 \
-    --output "$RUNTIME_IMAGE"
-
-BUNDLED_JAVA="$RUNTIME_IMAGE/bin/java"
-
-if [ ! -f "$BUNDLED_JAVA" ]; then
-    echo "Bundled Java runtime was not created correctly:"
-    echo "$BUNDLED_JAVA"
-    exit 1
-fi
-
-# ------------------------------------------------------------
-# 6. Create macOS application image
-# ------------------------------------------------------------
-
-echo ""
-echo "[6/7] Creating macOS DMG..."
-
-JAVAFX_MODULE_PATH="\$APPDIR/lib"
-
-jpackage \
+JAVAFX_MODULE_PATH='$APPDIR/lib'
+"$JPACKAGE" \
     --type dmg \
-    --name "$APP_NAME" \
+    --name Callsmith \
     --icon "$APP_ICON" \
     --app-version "$APP_VERSION" \
     --input "$INPUT_DIR" \
     --main-jar "$MAIN_JAR" \
-    --main-class "$MAIN_CLASS" \
+    --main-class com.mirakinetix.callsmith.CallsmithApplication \
     --runtime-image "$RUNTIME_IMAGE" \
     --dest "$OUTPUT_DIR" \
     --java-options "--module-path=$JAVAFX_MODULE_PATH" \
     --java-options "--add-modules=javafx.controls,javafx.fxml" \
     --java-options "--enable-native-access=javafx.graphics" \
     --java-options "--enable-native-access=ALL-UNNAMED,org.xerial.sqlitejdbc" \
-    --mac-package-identifier "com.mirakinetix.callsmith"
+    --mac-package-identifier com.mirakinetix.callsmith
 
-# ------------------------------------------------------------
-# 7. Verify package
-# ------------------------------------------------------------
-
-echo ""
-echo "[7/7] Verifying package..."
-
-DMG_FILE="$OUTPUT_DIR/${APP_NAME}-${APP_VERSION}.dmg"
-
-if [ ! -f "$DMG_FILE" ]; then
-    echo "DMG was not created:"
-    echo "$DMG_FILE"
-    exit 1
-fi
-
-echo ""
-echo "========================================"
-echo "PACKAGE CREATED SUCCESSFULLY"
-echo "========================================"
-echo ""
-echo "Architecture:"
-echo "$ARCH"
-echo ""
-echo "JavaFX classifier:"
-echo "$JAVAFX_CLASSIFIER"
-echo ""
-echo "DMG:"
-echo "$DMG_FILE"
-echo ""
-echo "Size:"
-du -h "$DMG_FILE"
-echo ""
+DMG_FILE="$OUTPUT_DIR/Callsmith-$APP_VERSION.dmg"
+test -s "$DMG_FILE"
+MOUNTPOINT="$(mktemp -d "$PACKAGING_ROOT/dmg.XXXXXXXX")"
+MOUNTED=0
+cleanup() {
+    if [[ "$MOUNTED" == 1 ]]; then hdiutil detach "$MOUNTPOINT" > /dev/null; fi
+    rmdir "$MOUNTPOINT"
+}
+trap cleanup EXIT
+hdiutil attach -readonly -nobrowse -mountpoint "$MOUNTPOINT" "$DMG_FILE"
+MOUNTED=1
+APP="$MOUNTPOINT/Callsmith.app/Contents"
+RUNTIME="$APP/runtime/Contents/Home"
+EVIDENCE="$PACKAGING_ROOT/package-evidence.txt"
+{
+    echo "macOS $ARCH disk image, version $APP_VERSION"
+    file "$APP/MacOS/Callsmith" "$RUNTIME/bin/java"
+    lipo -verify_arch "$ARCH" "$APP/MacOS/Callsmith"
+    lipo -verify_arch "$ARCH" "$RUNTIME/bin/java"
+    "$JAVA" "$PACKAGE_FILES" verify "$INPUT_DIR" "$APP/app" "$RUNTIME"
+    cmp "$APP_ICON" "$APP/Resources/Callsmith.icns"
+    echo "Verified packaged ICNS against the approved source."
+    "$RUNTIME/bin/java" --version
+    shasum -a 256 "$DMG_FILE"
+} | tee "$EVIDENCE"
+if [[ -n "${GITHUB_OUTPUT:-}" ]]; then echo "version=$APP_VERSION" >> "$GITHUB_OUTPUT"; fi
+echo "Callsmith DMG: $DMG_FILE"
