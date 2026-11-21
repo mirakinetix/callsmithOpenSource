@@ -30,6 +30,8 @@ import java.time.Instant;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 
@@ -310,6 +312,91 @@ class WorkspaceDesktopTest {
             fx(() -> { choose(dialog, "Close"); return null; });
             finish(running);
         } finally {
+            try {
+                close(opened);
+            } finally {
+                server.stop(0);
+            }
+        }
+    }
+
+    @Test
+    void windowBlocksOverlappingPostsAndKeepsTheSingleResponse() throws Exception {
+        DesktopFx.start();
+        Path path = directory.resolve("execution-workspace.db");
+        var database = new SqliteDatabase(path);
+        new CallsmithDatabase(database, new MigrationRunner()).initialize();
+        var now = Instant.now();
+        var collection = new Collection("run", "Run fixture", now, now);
+        new SqliteCollectionRepository(database).save(collection);
+
+        var server = localServer();
+        var hits = new CopyOnWriteArrayList<String>();
+        var entered = new CountDownLatch(2);
+        var releaseSingle = new CountDownLatch(1);
+        var releaseRun = new CountDownLatch(1);
+        server.createContext("/", exchange -> {
+            try (exchange) {
+                exchange.getRequestBody().readAllBytes();
+                String requestPath = exchange.getRequestURI().getPath();
+                hits.add(exchange.getRequestMethod() + " " + requestPath);
+                entered.countDown();
+                var release = requestPath.equals("/single") ? releaseSingle : releaseRun;
+                if (!release.await(10, TimeUnit.SECONDS)) throw new AssertionError("POST remained paused");
+                byte[] body = "fixture response".getBytes(StandardCharsets.UTF_8);
+                exchange.getResponseHeaders().set("Content-Type", "text/plain");
+                exchange.sendResponseHeaders(200, body.length);
+                exchange.getResponseBody().write(body);
+            } catch (InterruptedException exception) {
+                Thread.currentThread().interrupt();
+            }
+        });
+        server.start();
+        Opened opened = null;
+        try {
+            new SqliteSavedRequestRepository(database, new JacksonJsonSerializer()).save(
+                    new SavedRequest("saved", collection.id(), null, "Run once", "POST",
+                            base(server) + "/run", Map.of(), Map.of(), "{}", 0, now, now));
+            opened = open(path);
+            Parent main = opened.root();
+            select(main, "Run fixture");
+            fx(() -> {
+                combo(main, "#request-method").setValue("POST");
+                ((TextField) main.lookup("#request-url")).setText(base(server) + "/single");
+                var send = (Button) main.lookup("#request-send");
+                send.fire();
+                assertTrue(send.isDisabled());
+                send.fire();
+                return null;
+            });
+            var blocked = action(() -> button(main, "Run").fire());
+            var busy = dialog("Request in progress");
+            assertTrue(fx(() -> labels(busy).contains("Wait for it to finish")));
+            fx(() -> { choose(busy, "OK"); return null; });
+            finish(blocked);
+            await(() -> hits.size(), count -> count == 1, "single POST");
+            assertEquals(List.of("POST /single"), hits);
+
+            releaseSingle.countDown();
+            awaitBody(main, "fixture response");
+            var running = action(() -> button(main, "Run").fire());
+            var progress = dialog("Run Collection");
+            fx(() -> {
+                choose(progress, "Start Run");
+                choose(progress, "Start Run");
+                return null;
+            });
+            assertTrue(entered.await(5, TimeUnit.SECONDS));
+            fx(() -> { ((Button) main.lookup("#request-send")).fire(); return null; });
+            releaseRun.countDown();
+            await(() -> labels(progress), value -> value.contains("1 passed, 0 failed"), "collection result");
+            fx(() -> { choose(progress, "Close"); return null; });
+            finish(running);
+            assertEquals(List.of("POST /single", "POST /run"), hits);
+            awaitBody(main, "fixture response");
+        } finally {
+            releaseSingle.countDown();
+            releaseRun.countDown();
             try {
                 close(opened);
             } finally {

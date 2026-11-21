@@ -48,6 +48,10 @@ public final class PackageFiles {
         Path referenceNotices = project.resolve("LICENSES");
         Files.copy(referenceNotices.resolve("LUCIDE-LICENSE.txt"), licenses.resolve("LUCIDE-LICENSE.txt"));
         Files.copy(referenceNotices.resolve("THIRD-PARTY-NOTICES.md"), licenses.resolve("THIRD-PARTY-NOTICES.md"));
+        if (classifier.equals("win")) {
+            String manifest = "WINDOWS-CORRESPONDING-SOURCES.md";
+            Files.copy(referenceNotices.resolve(manifest), licenses.resolve(manifest));
+        }
 
         var versions = new TreeMap<String, String>();
         var javafxVersions = new HashSet<String>();

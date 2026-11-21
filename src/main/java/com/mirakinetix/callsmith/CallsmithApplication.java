@@ -8,6 +8,7 @@ import com.mirakinetix.callsmith.application.collection.importation.CollectionIm
 import com.mirakinetix.callsmith.application.environment.EnvironmentService;
 import com.mirakinetix.callsmith.application.environment.EnvironmentVariableResolver;
 import com.mirakinetix.callsmith.application.environment.EnvironmentVariableService;
+import com.mirakinetix.callsmith.application.http.ExecutionCoordinator;
 import com.mirakinetix.callsmith.application.http.HttpRequestService;
 import com.mirakinetix.callsmith.application.testing.AssertionEvaluator;
 import com.mirakinetix.callsmith.application.testing.CollectionRunner;
@@ -35,12 +36,11 @@ import javafx.stage.Stage;
 
 import java.nio.file.Path;
 import java.util.List;
-import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
 public class CallsmithApplication extends Application {
 
-    private ExecutorService requestExecutor;
+    private ExecutionCoordinator execution;
     private SqliteSecretStorage secretStorage;
 
     @Override
@@ -169,8 +169,7 @@ public class CallsmithApplication extends Application {
                         variableResolver
                 );
 
-        requestExecutor =
-                Executors.newVirtualThreadPerTaskExecutor();
+        execution = new ExecutionCoordinator(Executors.newVirtualThreadPerTaskExecutor());
 
         var assertionRepository = new SqliteAssertionRepository(sqliteDatabase, objectMapper);
         var assertionEvaluator = new AssertionEvaluator(variableResolver);
@@ -190,7 +189,7 @@ public class CallsmithApplication extends Application {
                         assertionRepository,
                         assertionEvaluator,
                         runner,
-                        requestExecutor
+                        execution
                 );
 
         mainWindow.show(stage);
@@ -198,11 +197,11 @@ public class CallsmithApplication extends Application {
 
     @Override
     public void stop() {
+        if (execution != null) {
+            execution.close();
+        }
         if (secretStorage != null) {
             secretStorage.lock();
-        }
-        if (requestExecutor != null) {
-            requestExecutor.close();
         }
     }
 

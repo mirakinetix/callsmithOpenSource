@@ -2,6 +2,7 @@ package com.mirakinetix.callsmith.ui.request;
 
 import com.mirakinetix.callsmith.application.environment.EnvironmentService;
 import com.mirakinetix.callsmith.application.environment.EnvironmentVariableService;
+import com.mirakinetix.callsmith.application.http.ExecutionCoordinator;
 import com.mirakinetix.callsmith.application.http.HttpRequestService;
 import com.mirakinetix.callsmith.domain.environment.Environment;
 import com.mirakinetix.callsmith.domain.environment.EnvironmentVariable;
@@ -33,14 +34,17 @@ import javafx.scene.layout.VBox;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
-import java.util.concurrent.ExecutorService;
+import java.util.concurrent.RejectedExecutionException;
+import java.util.concurrent.atomic.AtomicReference;
+
+import static com.mirakinetix.callsmith.application.http.ExecutionCoordinator.Operation.SEND;
 
 public final class RequestBuilderView extends BorderPane {
 
     private final HttpRequestService httpRequestService;
     private final EnvironmentService environmentService;
     private final EnvironmentVariableService environmentVariableService;
-    private final ExecutorService requestExecutor;
+    private final ExecutionCoordinator execution;
 
     private final ComboBox<String> methodSelector =
             new ComboBox<>();
@@ -74,7 +78,7 @@ public final class RequestBuilderView extends BorderPane {
     private final Label requestName = new Label();
     private SavedRequest savedRequest;
     private Draft cleanDraft;
-    private java.util.concurrent.Future<?> inFlight;
+    private boolean showCancellation;
     private long responseGeneration;
     private final Button cancelSend = new Button("Cancel", new IconView(Icon.CANCEL));
     private final Button assertionButton = new Button("Assertions", new IconView(Icon.CHECK));
@@ -104,11 +108,10 @@ public final class RequestBuilderView extends BorderPane {
 
     private void cancelRequest() {
         responseGeneration++;
-        if (inFlight != null) {
-            inFlight.cancel(true);
-            inFlight = null;
+        showCancellation = false;
+        if (execution.cancel(SEND)) {
+            sendButton.setText("Cancelling...");
         }
-        sendButton.setDisable(false);
         cancelSend.setDisable(true);
         responseInspector.clear();
     }
@@ -166,7 +169,8 @@ public final class RequestBuilderView extends BorderPane {
         cancelSend.setDisable(true);
         cancelSend.setOnAction(event -> {
             cancelRequest();
-            responseInspector.displayValidationError("Cancelled");
+            showCancellation = true;
+            responseInspector.displayValidationError("Cancelling...");
         });
         sendOptionsButton.setOnAction(event -> RequestOptionsDialog.show(
                 getScene().getWindow(), sendOptions).ifPresent(this::setSendOptions));
@@ -211,12 +215,12 @@ public final class RequestBuilderView extends BorderPane {
             HttpRequestService httpRequestService,
             EnvironmentService environmentService,
             EnvironmentVariableService environmentVariableService,
-            ExecutorService requestExecutor
+            ExecutionCoordinator execution
     ) {
         this.httpRequestService = httpRequestService;
         this.environmentService = environmentService;
         this.environmentVariableService = environmentVariableService;
-        this.requestExecutor = requestExecutor;
+        this.execution = execution;
 
         configureControls();
         loadEnvironments();
@@ -651,11 +655,6 @@ public final class RequestBuilderView extends BorderPane {
             return;
         }
 
-        long generation = ++responseGeneration;
-        sendButton.setDisable(true);
-        cancelSend.setDisable(false);
-        responseInspector.displaySending();
-
         Map<String, String> queryParameters =
                 queryParametersEditor.getValues();
 
@@ -677,59 +676,51 @@ public final class RequestBuilderView extends BorderPane {
         String environmentId = getSelectedEnvironmentId();
         String assertionRequestId = savedRequest == null ? null : savedRequest.id();
 
-        inFlight = requestExecutor.submit(
-                () -> {
-                    try {
-                        HttpResponse response =
-                                httpRequestService.execute(
-                                        request,
-                                        environmentId
-                                );
-                        ResponsePreview preview = ResponsePreview.prepare(response);
-                        String checks = assertionReport(assertionRequestId, response, environmentId);
+        long generation = responseGeneration + 1;
+        var result = new AtomicReference<Runnable>();
+        try {
+            boolean started = execution.tryStart(SEND,
+                    () -> result.set(executeInBackground(request, environmentId, assertionRequestId)),
+                    () -> Platform.runLater(() -> finishSend(generation, result.get())));
+            if (!started) return; // The modal collection dialog already shows its active run.
+        } catch (RejectedExecutionException exception) {
+            responseInspector.displayValidationError("Request execution is shutting down.");
+            return;
+        }
+        responseGeneration = generation;
+        sendButton.setDisable(true);
+        cancelSend.setDisable(false);
+        responseInspector.displaySending();
+    }
 
-                        Platform.runLater(
-                                () -> {
-                                    if (generation != responseGeneration) {
-                                        return;
-                                    }
-                                    inFlight = null;
-                                    cancelSend.setDisable(true);
-                                    responseInspector
-                                            .displayResponse(
-                                                    response, preview
-                                            );
-                                    responseInspector.displayAssertions(checks);
+    private Runnable executeInBackground(HttpRequest request, String environmentId, String assertionRequestId) {
+        try {
+            HttpResponse response = httpRequestService.execute(request, environmentId);
+            ResponsePreview preview = ResponsePreview.prepare(response);
+            String checks = assertionReport(assertionRequestId, response, environmentId);
+            return () -> {
+                responseInspector.displayResponse(response, preview);
+                responseInspector.displayAssertions(checks);
+            };
+        } catch (RuntimeException exception) {
+            String checks = assertionReport(assertionRequestId, null, environmentId);
+            return () -> {
+                responseInspector.displayError(exception);
+                responseInspector.displayAssertions(checks);
+            };
+        }
+    }
 
-                                    sendButton.setDisable(
-                                            false
-                                    );
-                                }
-                        );
-
-                    } catch (RuntimeException exception) {
-                        String checks = assertionReport(assertionRequestId, null, environmentId);
-                        Platform.runLater(
-                                () -> {
-                                    if (generation != responseGeneration) {
-                                        return;
-                                    }
-                                    inFlight = null;
-                                    cancelSend.setDisable(true);
-                                    responseInspector
-                                            .displayError(
-                                                    exception
-                                            );
-                                    responseInspector.displayAssertions(checks);
-
-                                    sendButton.setDisable(
-                                            false
-                                    );
-                                }
-                        );
-                    }
-                }
-        );
+    private void finishSend(long generation, Runnable displayResult) {
+        sendButton.setText("Send");
+        sendButton.setDisable(false);
+        cancelSend.setDisable(true);
+        if (showCancellation) {
+            showCancellation = false;
+            responseInspector.displayValidationError("Cancelled");
+        } else if (generation == responseGeneration && displayResult != null) {
+            displayResult.run();
+        }
     }
 
     private String assertionReport(String requestId, HttpResponse response, String environmentId) {

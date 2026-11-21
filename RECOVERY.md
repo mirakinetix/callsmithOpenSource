@@ -259,3 +259,46 @@ geometry, so manual packaged dialog and native file chooser checks remain.
   opt-in tests skipped. All nine Windows JavaFX tests passed separately.
   The Windows native chooser and taskbar checks, macOS interactive opening
   and Gatekeeper checks, and final beta approval remain open.
+
+## Windows private beta candidate
+
+RUN-01 now uses one execution slot per application instance. Individual Send
+and collection Run acquire it before dispatch. Repeated and overlapping
+actions start no new requests. Cancellation keeps the slot until the worker
+returns from HTTP and finishes cleanup. It cannot undo a POST that already
+reached the server. The app drains its executor before locking Secret Storage
+on shutdown.
+
+Loopback tests counted actual POSTs in both directions and exercised repeat
+clicks, successful handoff, cancellation cleanup, protected-variable failure,
+and timeout recovery. The collection runner preserved completed results and
+stopped sending after cancellation. Full Maven verify reported 233 tests,
+223 passed, 10 opt-in desktop skips, and zero failures or errors.
+All 10 Windows JavaFX tests passed separately, including the window-level
+overlap test. The packaged native picker and taskbar checks are still manual.
+
+The local private image is `Callsmith-1.0.0-windows-x64-private-rc2.zip`.
+Its SHA-256 is `aff15af34c5b6e5ffb443e9a06f8b5bb0f4b1326a32600b8c7f13095816e1825`.
+All 215 extracted files matched the build image. The launcher reports
+Callsmith, Mirakinetix, and numeric version 1.0.0. It is unsigned. The exact
+ZIP started with a fresh temporary database and exited cleanly with code 0
+and zero stderr bytes. The build verified 33 staged files, the seven-frame
+ICO, and the linked Java notices. The installed manifest records Temurin
+25.0.5.1+2, OpenJFX 25+29, Jackson Annotations 2.21, Core and Databind 2.21.8,
+and SQLite JDBC 3.53.4.0 with SQLite 3.53.4.
+
+- [Windows corresponding-source manifest](LICENSES/WINDOWS-CORRESPONDING-SOURCES.md)
+  records the locally staged upstream archives, checksums, Temurin signature,
+  vendor metadata, and remaining correspondence and redistribution checks.
+- Artwork matches the approved archive. Written owner permission for
+  redistribution is pending. Neither the source archives nor the Windows
+  candidate was distributed.
+- [Packaged Windows acceptance](docs/windows-beta-acceptance.md) covers the
+  two DPI scales, native dialogs, import/export, protected credentials, and
+  software restarts in a disposable workspace.
+- Proposed release label and asset name are `v1.0.0-beta.1` and
+  `Callsmith-1.0.0-beta.1-windows-x64.zip`. Keep Maven and native launcher
+  metadata at numeric `1.0.0` for this image. The About dialog does not currently
+  display a version. If the owner approves showing the beta identity in About,
+  source it from separate release metadata. Any future MSI requires a separate
+  numeric upgrade version check.

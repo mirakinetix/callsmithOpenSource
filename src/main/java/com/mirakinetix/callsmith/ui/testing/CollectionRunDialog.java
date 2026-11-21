@@ -1,5 +1,6 @@
 package com.mirakinetix.callsmith.ui.testing;
 
+import com.mirakinetix.callsmith.application.http.ExecutionCoordinator;
 import com.mirakinetix.callsmith.application.testing.CollectionRunner;
 import com.mirakinetix.callsmith.domain.collection.Collection;
 import com.mirakinetix.callsmith.domain.environment.Environment;
@@ -10,13 +11,17 @@ import javafx.scene.layout.VBox;
 import javafx.stage.Window;
 
 import java.util.List;
+import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicReference;
+
+import static com.mirakinetix.callsmith.application.http.ExecutionCoordinator.Operation.COLLECTION_RUN;
 
 public final class CollectionRunDialog {
     private CollectionRunDialog() {}
 
     public static void show(Window owner, Collection collection, List<Environment> environments,
-                            String currentEnvironment, CollectionRunner runner) {
+                            String currentEnvironment, CollectionRunner runner, ExecutionCoordinator execution) {
         Dialog<ButtonType> dialog = new Dialog<>();
         dialog.initOwner(owner);
         dialog.setTitle("Run Collection");
@@ -54,7 +59,7 @@ public final class CollectionRunDialog {
         var closeButton = dialog.getDialogPane().lookupButton(ButtonType.CLOSE);
         cancelButton.setDisable(true);
         AtomicBoolean stop = new AtomicBoolean();
-        Thread[] worker = {null};
+        boolean[] running = {false};
         int[] total = {0};
 
         cancelButton.addEventFilter(ActionEvent.ACTION, event -> {
@@ -62,57 +67,67 @@ public final class CollectionRunDialog {
             stop.set(true);
             cancelButton.setDisable(true);
             status.setText("Cancelling...");
-            if (worker[0] != null) worker[0].interrupt();
+            execution.cancel(COLLECTION_RUN);
         });
         dialog.setOnHidden(event -> {
-            if (worker[0] != null) {
+            if (running[0]) {
                 stop.set(true);
-                worker[0].interrupt();
+                execution.cancel(COLLECTION_RUN);
             }
         });
         dialog.setOnCloseRequest(event -> {
-            if (worker[0] != null) event.consume();
+            if (running[0]) event.consume();
         });
         startButton.addEventFilter(ActionEvent.ACTION, event -> {
             event.consume();
-            if (worker[0] != null) return;
+            if (running[0]) return;
             String selected = environment.getValue().id();
+            var outcome = new AtomicReference<>("CANCELLED — 0 requests started");
+            try {
+                boolean started = execution.tryStart(COLLECTION_RUN, () -> {
+                    try {
+                        var summary = runner.run(collection, selected, stop::get,
+                                count -> Platform.runLater(() -> {
+                                    total[0] = count;
+                                    if (!stop.get()) status.setText("0 / " + count + " requests completed");
+                                    progress.setProgress(count == 0 ? 1 : 0);
+                                }),
+                                step -> Platform.runLater(() -> {
+                                    progress.setProgress((double) step.number() / total[0]);
+                                    if (!stop.get()) status.setText(step.number() + " / " + total[0] + " requests completed");
+                                    append(results, step);
+                                }));
+                        outcome.set(summary.completion() + " — "
+                                + summary.completed().size() + " / " + summary.total() + " completed, "
+                                + summary.passed() + " passed, " + summary.failed() + " failed"
+                                + (summary.total() == 0 ? " (no saved requests)" : ""));
+                    } catch (IllegalArgumentException exception) {
+                        outcome.set(exception.getMessage());
+                    } catch (RuntimeException exception) {
+                        outcome.set("Unable to read or run the selected collection.");
+                    }
+                }, () -> Platform.runLater(() -> {
+                    running[0] = false;
+                    if (progress.getProgress() < 0) progress.setProgress(0);
+                    status.setText(outcome.get());
+                    cancelButton.setDisable(true);
+                    closeButton.setDisable(false);
+                }));
+                if (!started) {
+                    status.setText("Another request is still running or cancelling. Wait for it to finish.");
+                    return;
+                }
+            } catch (RejectedExecutionException exception) {
+                status.setText("Request execution is shutting down.");
+                return;
+            }
+            running[0] = true;
             startButton.setDisable(true);
             cancelButton.setDisable(false);
             closeButton.setDisable(true);
             environment.setDisable(true);
             status.setText("Preparing saved requests...");
             progress.setProgress(-1);
-            worker[0] = Thread.startVirtualThread(() -> {
-                try {
-                    var summary = runner.run(collection, selected, stop::get,
-                            count -> Platform.runLater(() -> {
-                                total[0] = count;
-                                status.setText("0 / " + count + " requests completed");
-                                progress.setProgress(count == 0 ? 1 : 0);
-                            }),
-                            step -> Platform.runLater(() -> {
-                                progress.setProgress((double) step.number() / total[0]);
-                                status.setText(step.number() + " / " + total[0] + " requests completed");
-                                append(results, step);
-                            }));
-                    Platform.runLater(() -> status.setText(summary.completion() + " — "
-                            + summary.completed().size() + " / " + summary.total() + " completed, "
-                            + summary.passed() + " passed, " + summary.failed() + " failed"
-                            + (summary.total() == 0 ? " (no saved requests)" : "")));
-                } catch (IllegalArgumentException exception) {
-                    Platform.runLater(() -> status.setText(exception.getMessage()));
-                } catch (RuntimeException exception) {
-                    Platform.runLater(() -> status.setText("Unable to read or run the selected collection."));
-                } finally {
-                    Platform.runLater(() -> {
-                        worker[0] = null;
-                        if (progress.getProgress() < 0) progress.setProgress(0);
-                        cancelButton.setDisable(true);
-                        closeButton.setDisable(false);
-                    });
-                }
-            });
         });
         dialog.showAndWait();
     }

@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- Prevented individual Send and collection Run from overlapping. Cancellation
+  keeps the execution slot occupied until the worker finishes cleanup.
+- Included a Windows corresponding-source manifest and set the launcher vendor
+  metadata to Mirakinetix.
+
 - Updated Jackson Core and Databind to 2.21.8 and pinned the packaging and CI JDK.
 - Staged native packages from Maven's resolved libraries and included installed license and notice files.
 - Verified native package contents in the manual workflows and limited public CI uploads to build reports.

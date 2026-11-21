@@ -50,6 +50,7 @@ $JavaFxModulePath = '--module-path=$APPDIR\lib'
 $Arguments = @(
     "--type", "app-image",
     "--name", "Callsmith",
+    "--vendor", "Mirakinetix",
     "--icon", $AppIcon,
     "--app-version", $AppVersion,
     "--input", $InputDir,

@@ -207,8 +207,9 @@ Application and third-party notices are in app/licenses on Windows and
 Callsmith.app/Contents/app/licenses on macOS. The bundled Java runtime retains
 its legal directory. The manual GitHub packaging jobs upload verification
 reports and leave the binaries on their runners.
-See [the notice manifest](LICENSES/THIRD-PARTY-NOTICES.md) and
-[the beta verification checklist](RECOVERY.md).
+See [the notice manifest](LICENSES/THIRD-PARTY-NOTICES.md), the
+[Windows corresponding-source manifest](LICENSES/WINDOWS-CORRESPONDING-SOURCES.md),
+and [the Windows beta acceptance checklist](docs/windows-beta-acceptance.md).
 
 To run the Windows JavaFX regression tests on a desktop, use this PowerShell
 command from the checkout:

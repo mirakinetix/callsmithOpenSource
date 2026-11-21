@@ -7,6 +7,7 @@ import com.mirakinetix.callsmith.application.collection.importation.CollectionIm
 import com.mirakinetix.callsmith.application.environment.EnvironmentService;
 import com.mirakinetix.callsmith.application.environment.SecretStorage;
 import com.mirakinetix.callsmith.application.environment.EnvironmentVariableService;
+import com.mirakinetix.callsmith.application.http.ExecutionCoordinator;
 import com.mirakinetix.callsmith.application.http.HttpRequestService;
 import com.mirakinetix.callsmith.application.testing.AssertionEvaluator;
 import com.mirakinetix.callsmith.application.testing.AssertionRepository;
@@ -35,7 +36,6 @@ import javafx.stage.Stage;
 
 import java.awt.Desktop;
 import java.net.URI;
-import java.util.concurrent.ExecutorService;
 
 public final class MainWindow {
 
@@ -58,7 +58,7 @@ public final class MainWindow {
     private final CollectionExportService collectionExportService;
     private final CollectionImportService collectionImportService;
     private final CollectionImportPersistenceService collectionImportPersistenceService;
-    private final ExecutorService requestExecutor;
+    private final ExecutionCoordinator execution;
     private final SecretStorage secretStorage;
     private final AssertionRepository assertions;
     private final AssertionEvaluator evaluator;
@@ -74,7 +74,7 @@ public final class MainWindow {
             CollectionImportPersistenceService collectionImportPersistenceService,
             SecretStorage secretStorage,
             AssertionRepository assertions, AssertionEvaluator evaluator, CollectionRunner runner,
-            ExecutorService requestExecutor
+            ExecutionCoordinator execution
     ) {
         this.secretStorage = secretStorage;
         this.assertions = assertions;
@@ -101,8 +101,7 @@ public final class MainWindow {
         this.collectionImportPersistenceService =
                 collectionImportPersistenceService;
 
-        this.requestExecutor =
-                requestExecutor;
+        this.execution = execution;
     }
 
     public void show(Stage stage) {
@@ -111,7 +110,7 @@ public final class MainWindow {
                         httpRequestService,
                         environmentService,
                         environmentVariableService,
-                        requestExecutor
+                        execution
                 );
 
         EnvironmentManager environmentManager =
@@ -144,8 +143,19 @@ public final class MainWindow {
 
         requestBuilderView.configureAssertions(assertions, evaluator);
         collectionSidebar.bindRequestEditor(requestBuilderView);
-        collectionSidebar.setRunCollectionAction(collection -> CollectionRunDialog.show(stage, collection,
-                environmentService.findAll(), requestBuilderView.getSelectedEnvironmentId(), runner));
+        collectionSidebar.setRunCollectionAction(collection -> {
+            if (execution.activeOperation() == ExecutionCoordinator.Operation.SEND) {
+                var busy = new Alert(Alert.AlertType.INFORMATION,
+                        "A single request is still running or cancelling. Wait for it to finish before starting a collection.");
+                busy.setTitle("Request in progress");
+                busy.initOwner(stage);
+                busy.getDialogPane().getStylesheets().addAll(stage.getScene().getStylesheets());
+                busy.showAndWait();
+                return;
+            }
+            CollectionRunDialog.show(stage, collection, environmentService.findAll(),
+                    requestBuilderView.getSelectedEnvironmentId(), runner, execution);
+        });
         stage.addEventHandler(javafx.stage.WindowEvent.WINDOW_CLOSE_REQUEST, event -> {
             if (collectionSidebar.isImportRunning() || !requestBuilderView.allowDiscard()) {
                 event.consume();

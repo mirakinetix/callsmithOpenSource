@@ -5,6 +5,7 @@ import com.mirakinetix.callsmith.application.environment.EnvironmentRepository;
 import com.mirakinetix.callsmith.application.environment.EnvironmentService;
 import com.mirakinetix.callsmith.application.environment.EnvironmentVariableRepository;
 import com.mirakinetix.callsmith.application.environment.EnvironmentVariableService;
+import com.mirakinetix.callsmith.application.http.ExecutionCoordinator;
 import com.mirakinetix.callsmith.application.http.HttpRequestService;
 import com.mirakinetix.callsmith.domain.http.RequestOptions;
 import com.mirakinetix.callsmith.domain.http.SelectedUpload;
@@ -91,7 +92,7 @@ class RequestDesktopTest {
             Stage stage = fx(() -> {
                 var view = new RequestBuilderView(new HttpRequestService(new JavaHttpRequestExecutor()),
                         new EnvironmentService(mock(EnvironmentRepository.class)),
-                        new EnvironmentVariableService(mock(EnvironmentVariableRepository.class)), workers);
+                        new EnvironmentVariableService(mock(EnvironmentVariableRepository.class)), new ExecutionCoordinator(workers));
                 view.setRequestActions(() -> {}, () -> {});
                 var window = new Stage();
                 var scene = new Scene(view, 1100, 720);
@@ -115,10 +116,13 @@ class RequestDesktopTest {
                 assertTrue(slowStarted.await(5, TimeUnit.SECONDS));
                 fx(() -> {
                     button(view, "#request-cancel").fire();
-                    assertTrue(((Label) view.lookup("#response-status")).getText().contains("Cancelled"));
-                    assertFalse(button(view, "#request-send").isDisabled());
+                    assertTrue(((Label) view.lookup("#response-status")).getText().contains("Cancelling"));
+                    assertTrue(button(view, "#request-send").isDisabled());
                     return null;
                 });
+                DesktopFx.await(() -> ((Label) view.lookup("#response-status")).getText(),
+                        value -> value.contains("Cancelled"), "completed cancellation");
+                assertFalse(fx(() -> button(view, "#request-send").isDisabled()));
                 send(view, base + "/echo", "new response", options(TEXT, RequestOptions.Authentication.NONE, null));
                 awaitBody(view, "new response");
                 releaseSlow.countDown();

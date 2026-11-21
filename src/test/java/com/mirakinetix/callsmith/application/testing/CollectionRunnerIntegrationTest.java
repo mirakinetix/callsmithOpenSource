@@ -3,11 +3,16 @@ package com.mirakinetix.callsmith.application.testing;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.mirakinetix.callsmith.application.collection.CollectionWorkspaceService;
 import com.mirakinetix.callsmith.application.environment.EnvironmentVariableResolver;
+import com.mirakinetix.callsmith.application.http.ExecutionCoordinator;
 import com.mirakinetix.callsmith.application.http.HttpRequestService;
 import com.mirakinetix.callsmith.domain.collection.Collection;
 import com.mirakinetix.callsmith.domain.collection.CollectionFolder;
 import com.mirakinetix.callsmith.domain.environment.Environment;
 import com.mirakinetix.callsmith.domain.environment.EnvironmentVariable;
+import com.mirakinetix.callsmith.domain.http.HttpFailure;
+import com.mirakinetix.callsmith.domain.http.HttpRequest;
+import com.mirakinetix.callsmith.domain.http.HttpResponse;
+import com.mirakinetix.callsmith.domain.http.RequestOptions;
 import com.mirakinetix.callsmith.domain.request.SavedRequest;
 import com.mirakinetix.callsmith.infrastructure.http.JavaHttpRequestExecutor;
 import com.mirakinetix.callsmith.infrastructure.persistence.CallsmithDatabase;
@@ -32,6 +37,7 @@ import java.util.concurrent.*;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 
+import static com.mirakinetix.callsmith.application.http.ExecutionCoordinator.Operation.*;
 import static com.mirakinetix.callsmith.application.testing.ResponseAssertion.Type.*;
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -105,10 +111,128 @@ class CollectionRunnerIntegrationTest {
     }
 
     @Test
+    void sendAndCollectionShareOneDispatchSlotForStateChangingPosts() throws Exception {
+        var fixture = new Fixture();
+        var singleEntered = new CountDownLatch(1);
+        var collectionEntered = new CountDownLatch(1);
+        var releaseSingle = new CountDownLatch(1);
+        var releaseCollection = new CountDownLatch(1);
+        var hits = new CopyOnWriteArrayList<String>();
+        var authorized = new AtomicInteger();
+
+        var server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
+        server.createContext("/", exchange -> {
+            exchange.getRequestBody().readAllBytes();
+            String path = exchange.getRequestURI().getPath();
+            hits.add(exchange.getRequestMethod() + " " + path);
+            if ("Bearer private-fixture-token".equals(exchange.getRequestHeaders().getFirst("Authorization"))) {
+                authorized.incrementAndGet();
+            }
+            if (path.equals("/single")) {
+                singleEntered.countDown();
+                awaitLatch(releaseSingle);
+            } else if (path.equals("/collection")) {
+                collectionEntered.countDown();
+                awaitLatch(releaseCollection);
+            }
+            respond(exchange, 200);
+        });
+        server.start();
+        var execution = new ExecutionCoordinator(Executors.newVirtualThreadPerTaskExecutor());
+        try {
+            String origin = "http://127.0.0.1:" + server.getAddress().getPort();
+            var http = fixture.http();
+            HttpRequest single = post(origin + "/single", Duration.ofSeconds(10));
+            HttpRequest followUp = post(origin + "/next", Duration.ofSeconds(10));
+            fixture.workspace.saveRequest(new SavedRequest("post", "collection", null, "Post", "POST",
+                    origin + "/collection", single.headers(), Map.of(), "{}", 0, NOW, NOW));
+            var runner = fixture.runner(Duration.ofSeconds(10));
+            var summary = new CompletableFuture<CollectionRunner.Summary>();
+            var runFinished = new CountDownLatch(1);
+            Runnable run = () -> summary.complete(
+                    runner.run(fixture.collection, "env", () -> false, count -> {}, step -> {}));
+
+            var send = startSend(execution, http, single);
+            assertTrue(singleEntered.await(5, TimeUnit.SECONDS));
+            assertFalse(execution.tryStart(SEND, () -> http.execute(single, "env"), () -> {}));
+            assertFalse(execution.tryStart(COLLECTION_RUN, run, runFinished::countDown));
+            assertEquals(List.of("POST /single"), hits);
+
+            releaseSingle.countDown();
+            assertEquals(200, send.get(5, TimeUnit.SECONDS).statusCode());
+            assertTrue(execution.tryStart(COLLECTION_RUN, run, runFinished::countDown));
+            assertTrue(collectionEntered.await(5, TimeUnit.SECONDS));
+            assertFalse(execution.tryStart(SEND, () -> http.execute(followUp, "env"), () -> {}));
+            assertFalse(execution.tryStart(COLLECTION_RUN, run, () -> {}));
+            assertEquals(List.of("POST /single", "POST /collection"), hits);
+
+            releaseCollection.countDown();
+            assertTrue(runFinished.await(5, TimeUnit.SECONDS));
+            assertEquals(1, summary.get(5, TimeUnit.SECONDS).passed());
+            assertFalse(summary.get().toString().contains("private-fixture-token"));
+            assertEquals(200, startSend(execution, http, followUp).get(5, TimeUnit.SECONDS).statusCode());
+            assertEquals(List.of("POST /single", "POST /collection", "POST /next"), hits);
+            assertEquals(3, authorized.get());
+        } finally {
+            releaseSingle.countDown();
+            releaseCollection.countDown();
+            execution.close();
+            server.stop(0);
+            fixture.storage.lock();
+        }
+    }
+
+    @Test
+    void rejectedProtectedRequestAndTimedOutPostReleaseTheDispatchSlot() throws Exception {
+        var fixture = new Fixture();
+        var hits = new CopyOnWriteArrayList<String>();
+        var release = new CountDownLatch(1);
+        var server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
+        server.createContext("/", exchange -> {
+            exchange.getRequestBody().readAllBytes();
+            String path = exchange.getRequestURI().getPath();
+            hits.add(exchange.getRequestMethod() + " " + path);
+            if (path.equals("/timeout")) awaitLatch(release);
+            respond(exchange, 200);
+        });
+        server.start();
+        var execution = new ExecutionCoordinator(Executors.newVirtualThreadPerTaskExecutor());
+        try {
+            String origin = "http://127.0.0.1:" + server.getAddress().getPort();
+            var http = fixture.http();
+            fixture.storage.lock();
+            var rejected = startSend(execution, http, post(origin + "/locked", Duration.ofSeconds(5)));
+            var failure = assertInstanceOf(HttpFailure.class,
+                    assertThrows(ExecutionException.class, () -> rejected.get(5, TimeUnit.SECONDS)).getCause());
+            assertFalse(failure.getMessage().contains("private-fixture-token"));
+            assertEquals(List.of(), hits);
+
+            fixture.storage.unlock("fictional workspace phrase".toCharArray());
+            var delayed = startSend(execution, http, post(origin + "/timeout", Duration.ofMillis(1500)));
+            var timeout = assertInstanceOf(HttpFailure.class,
+                    assertThrows(ExecutionException.class, () -> delayed.get(5, TimeUnit.SECONDS)).getCause());
+            assertEquals(HttpFailure.Kind.TIMEOUT, timeout.kind());
+            assertEquals(List.of("POST /timeout"), hits);
+
+            release.countDown();
+            assertEquals(200, startSend(execution, http, post(origin + "/after", Duration.ofSeconds(5)))
+                    .get(5, TimeUnit.SECONDS).statusCode());
+            assertEquals(List.of("POST /timeout", "POST /after"), hits);
+        } finally {
+            release.countDown();
+            execution.close();
+            server.stop(0);
+            fixture.storage.lock();
+        }
+    }
+
+    @Test
     void cancellationKeepsCompletedResultsAndConcurrentStartCannotDuplicateRequests() throws Exception {
         var fixture = new Fixture();
         var entered = new CountDownLatch(1);
         var release = new CountDownLatch(1);
+        var cancellationCleanup = new CountDownLatch(1);
+        var executionFinished = new CountDownLatch(1);
         var hits = new CopyOnWriteArrayList<String>();
         HttpServer server = HttpServer.create(new InetSocketAddress("localhost", 0), 0);
         server.createContext("/", exchange -> {
@@ -125,6 +249,7 @@ class CollectionRunnerIntegrationTest {
             respond(exchange, 200);
         });
         server.start();
+        var execution = new ExecutionCoordinator(Executors.newVirtualThreadPerTaskExecutor());
         try {
             String origin = "http://localhost:" + server.getAddress().getPort();
             fixture.save("first", null, origin + "/first", 0);
@@ -133,26 +258,37 @@ class CollectionRunnerIntegrationTest {
             var runner = fixture.runner(Duration.ofSeconds(10));
             var cancelled = new AtomicBoolean();
             var summary = new CompletableFuture<CollectionRunner.Summary>();
-            Thread worker = Thread.startVirtualThread(() -> {
-                try {
-                    summary.complete(runner.run(fixture.collection, "env", cancelled::get, count -> {}, result -> {}));
-                } catch (Throwable error) {
-                    summary.completeExceptionally(error);
-                }
-            });
+            assertTrue(execution.tryStart(COLLECTION_RUN, () -> {
+                summary.complete(runner.run(fixture.collection, "env", cancelled::get, count -> {}, result -> {}));
+                // Keep cleanup in progress after transport cancellation has returned.
+                Thread.interrupted();
+                awaitLatch(cancellationCleanup);
+            }, executionFinished::countDown));
             assertTrue(entered.await(4, TimeUnit.SECONDS));
             assertThrows(IllegalStateException.class, () ->
                     runner.run(fixture.collection, "env", () -> false, count -> {}, step -> {}));
             cancelled.set(true);
-            worker.interrupt();
+            assertTrue(execution.cancel(COLLECTION_RUN));
             var outcome = summary.get(4, TimeUnit.SECONDS);
             assertEquals(CollectionRunner.Completion.CANCELLED, outcome.completion());
             assertEquals(1, outcome.completed().size());
             assertEquals(1, outcome.passed());
+            assertFalse(execution.tryStart(SEND,
+                    () -> fixture.http().execute(post(origin + "/too-soon", Duration.ofSeconds(5)), "env"),
+                    () -> {}));
             assertEquals(List.of("/first", "/wait"), hits);
+            release.countDown();
+            cancellationCleanup.countDown();
+            assertTrue(executionFinished.await(5, TimeUnit.SECONDS));
+            assertEquals(200, startSend(execution, fixture.http(), post(origin + "/after", Duration.ofSeconds(5)))
+                    .get(5, TimeUnit.SECONDS).statusCode());
+            assertEquals(List.of("/first", "/wait", "/after"), hits);
         } finally {
             release.countDown();
+            cancellationCleanup.countDown();
+            execution.close();
             server.stop(0);
+            fixture.storage.lock();
         }
     }
 
@@ -213,6 +349,37 @@ class CollectionRunnerIntegrationTest {
         assertTrue(reopened.find(saved.id()).isEmpty());
     }
 
+    private static HttpRequest post(String url, Duration timeout) {
+        var options = new RequestOptions(timeout, RequestOptions.Authentication.NONE,
+                RequestOptions.BodyFormat.RAW, List.of(), null);
+        return new HttpRequest("POST", url, Map.of("Authorization", "Bearer {{token}}"), Map.of(), "{}", options);
+    }
+
+    private static CompletableFuture<HttpResponse> startSend(ExecutionCoordinator execution, HttpRequestService http,
+                                                             HttpRequest request) {
+        var operation = new FutureTask<>(() -> http.execute(request, "env"));
+        var finished = new CompletableFuture<HttpResponse>();
+        assertTrue(execution.tryStart(SEND, operation, () -> {
+            try {
+                finished.complete(operation.get());
+            } catch (ExecutionException exception) {
+                finished.completeExceptionally(exception.getCause());
+            } catch (InterruptedException exception) {
+                Thread.currentThread().interrupt();
+                finished.completeExceptionally(exception);
+            }
+        }));
+        return finished;
+    }
+
+    private static void awaitLatch(CountDownLatch gate) {
+        try {
+            if (!gate.await(12, TimeUnit.SECONDS)) throw new AssertionError("Loopback fixture did not release.");
+        } catch (InterruptedException exception) {
+            Thread.currentThread().interrupt();
+        }
+    }
+
     private class Fixture {
         final SqliteDatabase database = new SqliteDatabase(temporary.resolve("test.db"));
         final SqliteSecretStorage storage = new SqliteSecretStorage(database);
@@ -234,8 +401,12 @@ class CollectionRunnerIntegrationTest {
             resolver = new EnvironmentVariableResolver(variables);
         }
 
+        HttpRequestService http() {
+            return new HttpRequestService(new JavaHttpRequestExecutor(), resolver);
+        }
+
         CollectionRunner runner(Duration deadline) {
-            return new CollectionRunner(workspace, assertions, new HttpRequestService(new JavaHttpRequestExecutor(), resolver),
+            return new CollectionRunner(workspace, assertions, http(),
                     new AssertionEvaluator(resolver), deadline);
         }
 
