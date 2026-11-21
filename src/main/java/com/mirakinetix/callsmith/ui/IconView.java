@@ -2,6 +2,13 @@ package com.mirakinetix.callsmith.ui;
 
 import javafx.scene.Group;
 import javafx.scene.Node;
+import javafx.scene.image.Image;
+import javafx.scene.image.ImageView;
+import javafx.scene.layout.StackPane;
+import javax.xml.XMLConstants;
+import java.util.Map;
+import java.util.Optional;
+import java.util.concurrent.ConcurrentHashMap;
 import javafx.scene.paint.Color;
 import javafx.scene.shape.Circle;
 import javafx.scene.shape.Line;
@@ -21,7 +28,9 @@ import org.w3c.dom.Document;
 import org.w3c.dom.Element;
 import org.w3c.dom.NodeList;
 
-public final class IconView extends Group {
+public final class IconView extends StackPane {
+    private static final Map<String, Optional<Image>> IMAGES = new ConcurrentHashMap<>();
+    private final Group fallbackShapes = new Group();
 
     private static final String RESOURCE_PREFIX =
             "/icons/";
@@ -44,9 +53,38 @@ public final class IconView extends Group {
             Icon icon,
             double size
     ) {
-        this.size = size;
+        this(icon, size, icon.approvedResource());
+    }
 
-        loadIcon(icon);
+    IconView(Icon icon, double size, String approvedResource) {
+        this.size = size;
+        setMinSize(size, size);
+        setPrefSize(size, size);
+        setMaxSize(size, size);
+        setMouseTransparent(true);
+        Image approved = approvedResource == null ? null
+                : IMAGES.computeIfAbsent(approvedResource, IconView::readImage).orElse(null);
+        if (approved == null) {
+            getChildren().add(fallbackShapes);
+            loadIcon(icon);
+            return;
+        }
+        ImageView view = new ImageView(approved);
+        view.setFitWidth(size);
+        view.setFitHeight(size);
+        view.setPreserveRatio(true);
+        view.setSmooth(true);
+        getChildren().add(view);
+    }
+
+    private static Optional<Image> readImage(String resource) {
+        try (InputStream input = IconView.class.getResourceAsStream(resource)) {
+            if (input == null) return Optional.empty();
+            Image image = new Image(input);
+            return image.isError() ? Optional.empty() : Optional.of(image);
+        } catch (IOException | IllegalArgumentException exception) {
+            return Optional.empty();
+        }
     }
 
     public void setIconColor(
@@ -60,9 +98,7 @@ public final class IconView extends Group {
 
         this.iconColor = color;
 
-        getChildren().forEach(
-                this::applyColor
-        );
+        fallbackShapes.getChildren().forEach(this::applyColor);
     }
 
     private void loadIcon(
@@ -78,18 +114,12 @@ public final class IconView extends Group {
                              resourceName
                      )) {
 
-            if (inputStream == null) {
-                throw new IllegalArgumentException(
-                        "Icon resource not found: "
-                                + resourceName
-                );
-            }
-
-            Document document =
-                    DocumentBuilderFactory
-                            .newInstance()
-                            .newDocumentBuilder()
-                            .parse(inputStream);
+            if (inputStream == null) return;
+            var factory = DocumentBuilderFactory.newInstance();
+            factory.setFeature(XMLConstants.FEATURE_SECURE_PROCESSING, true);
+            factory.setAttribute(XMLConstants.ACCESS_EXTERNAL_DTD, "");
+            factory.setAttribute(XMLConstants.ACCESS_EXTERNAL_SCHEMA, "");
+            Document document = factory.newDocumentBuilder().parse(inputStream);
 
             Element root =
                     document.getDocumentElement();
@@ -109,7 +139,7 @@ public final class IconView extends Group {
             List<Node> nodes =
                     parseShapes(root);
 
-            getChildren().addAll(nodes);
+            fallbackShapes.getChildren().addAll(nodes);
 
             double scaleX =
                     size / viewBoxWidth;
@@ -117,19 +147,12 @@ public final class IconView extends Group {
             double scaleY =
                     size / viewBoxHeight;
 
-            setScaleX(scaleX);
-            setScaleY(scaleY);
-
-            getChildren().forEach(
-                    this::applyColor
-            );
-
+            fallbackShapes.setScaleX(scaleX);
+            fallbackShapes.setScaleY(scaleY);
+            fallbackShapes.getChildren().forEach(this::applyColor);
         } catch (Exception exception) {
-            throw new IllegalStateException(
-                    "Unable to load icon: "
-                            + resourceName,
-                    exception
-            );
+            // The action remains usable through its text if both assets are unavailable.
+            fallbackShapes.getChildren().clear();
         }
     }
 

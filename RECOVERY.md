@@ -59,3 +59,35 @@ The rebuilt Windows x64 image started on a fresh disposable database with no
 stderr output. Its accessibility tree exposed Send Options, Format JSON and Save
 Response Bytes. The desktop input provider reported unavailable coordinate input
 geometry, so manual packaged dialog and native file chooser checks remain.
+
+## Part 3 — Desktop workflows and approved icons
+
+- The original approved archive was available as a local Downloads copy.
+  Connected Library retrieval was unavailable. The matching filename, archive
+  manifest, 186-entry CRC check, and SHA-256 are recorded in BRANDING.md.
+- Shipped 38 unchanged UI PNGs and six window PNGs. IconView prefers the
+  approved artwork and retains the existing SVG fallback. Both packaging scripts
+  use the supplied native assets. No branding layout or workflow was redesigned.
+- Collection refresh now preserves selection and expansion, restores the saved
+  request after save or move, and avoids reloading an already open request.
+  Collection deletion guards the current draft, and toolbar database failures
+  surface in owned dialogs. Request field and environment dialogs have owners.
+- The opt-in Windows JavaFX tests exercised collection creation and rename,
+  nesting, request create/save/send/edit/Save As/duplicate/move/delete, discard
+  confirmation, resize, restart, and repeat send against loopback.
+- The same suite exercised Secret Storage setup, conversion of a fictional
+  legacy row, masked display, locked request rejection, incorrect and correct
+  unlock, secret substitution, and persistence after restart. The standard
+  SQLite tests also passed the independent version 10 backup and recovery case.
+- Send Options was tested for authentication selection and form/timeout
+  validation. The editor test exercised cancel and resend, multipart file
+  bytes, and binary response display. Native file choosers remain manual.
+- Maven verify had 186 passed, zero failures/errors, and five desktop tests
+  skipped by default. The opt-in desktop run passed all five.
+- Windows x64 rebuilt and started with a new disposable SQLite database and
+  zero stderr bytes. The launcher embeds all seven supplied ICO frames byte for
+  byte, and the JAR includes all 44 copied PNGs. The accessibility tree exposed
+  the correct window title and labeled controls. Packaged desktop click geometry
+  was unavailable. Visual taskbar checks at Windows scaling settings and native
+  dialog interaction remain open. The macOS script passed bash syntax checking.
+  macOS Intel and Apple Silicon packaging and GUI tests remain open.

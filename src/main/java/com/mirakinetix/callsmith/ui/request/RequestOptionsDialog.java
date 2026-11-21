@@ -4,6 +4,8 @@ import com.mirakinetix.callsmith.domain.http.RequestOptions;
 import com.mirakinetix.callsmith.domain.http.RequestOptions.AuthType;
 import com.mirakinetix.callsmith.domain.http.RequestOptions.BodyFormat;
 import com.mirakinetix.callsmith.domain.http.SelectedUpload;
+import com.mirakinetix.callsmith.ui.Icon;
+import com.mirakinetix.callsmith.ui.IconView;
 import javafx.collections.FXCollections;
 import javafx.event.ActionEvent;
 import javafx.geometry.Insets;
@@ -54,7 +56,7 @@ final class RequestOptionsDialog {
         SelectedUpload[] selected = {current.upload()};
         var fileName = new Label(selected[0] == null ? "No file selected" : selected[0].filename());
         var fileField = new TextField(selected[0] == null ? "file" : selected[0].field());
-        var choose = new Button("Choose File...");
+        var choose = new Button("Choose File...", new IconView(Icon.UPLOAD_FILE));
         var clear = new Button("Clear");
         var fileControls = new HBox(6, choose, clear, fileName);
         var error = new Label();
@@ -100,7 +102,7 @@ final class RequestOptionsDialog {
         help.setWrapText(true);
         help.setMaxWidth(440);
         grid.add(help, 0, 0, 2, 1);
-        grid.addRow(1, new Label("Authentication"), authType);
+        grid.addRow(1, new Label("Authentication", new IconView(Icon.AUTH)), authType);
         grid.addRow(2, new Label("Username / key name"), authName);
         grid.addRow(3, new Label("Credential"), credential);
         grid.addRow(4, new Label("Timeout (seconds)"), timeout);

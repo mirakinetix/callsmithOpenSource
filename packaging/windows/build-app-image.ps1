@@ -11,6 +11,8 @@ $RuntimeImage = Join-Path $PackagingRoot "runtime"
 $OutputDir = Join-Path $PackagingRoot "dist"
 
 $AppName = "Callsmith"
+$AppIcon = Join-Path $PSScriptRoot "Callsmith.ico"
+if (-not (Test-Path -LiteralPath $AppIcon -PathType Leaf)) { throw "Missing approved Callsmith.ico" }
 $AppVersion = "1.0.0"
 $MainJar = "callsmith-$AppVersion.jar"
 $MainClass = "com.mirakinetix.callsmith.CallsmithApplication"
@@ -182,6 +184,7 @@ $JavaFxModulePath = '--module-path=$APPDIR\lib'
 & jpackage `
     --type app-image `
     --name $AppName `
+    --icon $AppIcon `
     --app-version $AppVersion `
     --input $InputDir `
     --main-jar $MainJar `

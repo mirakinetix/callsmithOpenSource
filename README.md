@@ -103,3 +103,14 @@ limited to 8 MiB. The text preview is limited to 256 Ki characters.
 
 OAuth, saved authorization presets, multiple file parts, and downloads larger
 than the response limit are outside the current workflow.
+
+To run the Windows JavaFX regression tests on a desktop, use this PowerShell
+command from the checkout:
+
+```powershell
+mvn -B '-Dcallsmith.desktop.tests=true' '-Dtest=WorkspaceDesktopTest,RequestDesktopTest,IconDesktopTest' test
+```
+
+The tests create their own SQLite databases and loopback endpoints. The platform
+file pickers, Windows taskbar scaling, and macOS native builds need separate
+checks. See [BRANDING.md](BRANDING.md) for the shipped icon formats and provenance.

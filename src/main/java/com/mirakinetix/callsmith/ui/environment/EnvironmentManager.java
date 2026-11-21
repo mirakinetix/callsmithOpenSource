@@ -5,6 +5,7 @@ import com.mirakinetix.callsmith.application.environment.SecretStorage;
 import com.mirakinetix.callsmith.application.environment.EnvironmentVariableService;
 import com.mirakinetix.callsmith.domain.environment.Environment;
 import com.mirakinetix.callsmith.domain.environment.EnvironmentVariable;
+import com.mirakinetix.callsmith.ui.CallsmithWindowIcons;
 import com.mirakinetix.callsmith.ui.Icon;
 import com.mirakinetix.callsmith.ui.IconView;
 
@@ -108,6 +109,7 @@ public final class EnvironmentManager {
         );
 
         stage.setResizable(true);
+        CallsmithWindowIcons.install(stage);
 
         BorderPane root =
                 buildView();
@@ -193,8 +195,12 @@ public final class EnvironmentManager {
                         description
                 );
 
-        Button protection = new Button("Secret Storage");
-        protection.setOnAction(event -> new SecretStorageDialog(secretStorage).show(stage));
+        Button protection = new Button("Secret Storage", new IconView(
+                secretStorage.isUnlocked() ? Icon.UNLOCK : Icon.LOCK));
+        protection.setOnAction(event -> {
+            new SecretStorageDialog(secretStorage).show(stage);
+            protection.setGraphic(new IconView(secretStorage.isUnlocked() ? Icon.UNLOCK : Icon.LOCK));
+        });
 
         HBox header = new HBox(16, text, protection);
 
@@ -1310,6 +1316,9 @@ public final class EnvironmentManager {
     private void applyBrandStyles(
             Dialog<?> dialog
     ) {
+        if (stage != null && dialog.getOwner() == null) {
+            dialog.initOwner(stage);
+        }
         dialog.getDialogPane()
                 .getStylesheets()
                 .add(

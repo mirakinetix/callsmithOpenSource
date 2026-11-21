@@ -73,8 +73,8 @@ public final class RequestBuilderView extends BorderPane {
     private Draft cleanDraft;
     private java.util.concurrent.Future<?> inFlight;
     private long responseGeneration;
-    private final Button cancelSend = new Button("Cancel");
-    private final Button sendOptionsButton = new Button("Send Options...");
+    private final Button cancelSend = new Button("Cancel", new IconView(Icon.CANCEL));
+    private final Button sendOptionsButton = new Button("Send Options...", new IconView(Icon.SETTINGS));
     private RequestOptions sendOptions = RequestOptions.DEFAULT;
 
     private void resetSendOptions() {
@@ -153,15 +153,15 @@ public final class RequestBuilderView extends BorderPane {
         });
         sendOptionsButton.setOnAction(event -> RequestOptionsDialog.show(
                 getScene().getWindow(), sendOptions).ifPresent(this::setSendOptions));
-        Button create = new Button("New Request");
+        Button create = new Button("New Request", new IconView(Icon.NEW_REQUEST));
         create.setOnAction(event -> {
             if (allowDiscard()) {
                 clearRequest();
             }
         });
-        Button saveButton = new Button("Save");
+        Button saveButton = new Button("Save", new IconView(Icon.SAVE));
         saveButton.setOnAction(event -> save.run());
-        Button saveAsButton = new Button("Save As");
+        Button saveAsButton = new Button("Save As", new IconView(Icon.SAVE_AS));
         saveAsButton.setOnAction(event -> saveAs.run());
         savedRequestActions.getChildren().setAll(
                 requestName, new HBox(6, create, saveButton, saveAsButton, sendOptionsButton));
@@ -212,6 +212,9 @@ public final class RequestBuilderView extends BorderPane {
 
     private void configureControls() {
         urlField.setId("request-url");
+        methodSelector.setId("request-method");
+        queryParametersEditor.setId("request-query");
+        headersEditor.setId("request-headers");
         requestBody.setId("request-body");
         sendButton.setId("request-send");
         cancelSend.setId("request-cancel");
@@ -501,11 +504,11 @@ public final class RequestBuilderView extends BorderPane {
                         savedRequestActions,
                         requestBar,
                         variablesPanel,
-                        new Label("Query Parameters"),
+                        new Label("Query Parameters", new IconView(Icon.QUERY)),
                         queryParametersEditor,
-                        new Label("Headers"),
+                        new Label("Headers", new IconView(Icon.HEADERS)),
                         headersEditor,
-                        new Label("Body"),
+                        new Label("Body", new IconView(Icon.BODY)),
                         requestBody
                 );
 

@@ -2,6 +2,8 @@ package com.mirakinetix.callsmith.ui.response;
 
 import com.mirakinetix.callsmith.domain.http.HttpFailure;
 import com.mirakinetix.callsmith.domain.http.HttpResponse;
+import com.mirakinetix.callsmith.ui.Icon;
+import com.mirakinetix.callsmith.ui.IconView;
 import javafx.concurrent.Task;
 import javafx.geometry.Insets;
 import javafx.scene.control.Alert;
@@ -24,7 +26,7 @@ public final class ResponseInspector extends VBox {
     private final TextArea headers = new TextArea();
     private final TextArea body = new TextArea();
     private final CheckBox pretty = new CheckBox("Format JSON");
-    private final Button save = new Button("Save Response Bytes...");
+    private final Button save = new Button("Save Response Bytes...", new IconView(Icon.SAVE_RESPONSE));
     private HttpResponse current;
     private ResponsePreview preview;
 
@@ -44,7 +46,7 @@ public final class ResponseInspector extends VBox {
         pretty.setOnAction(event -> displayBody());
         save.setOnAction(event -> saveResponse());
         VBox.setVgrow(body, Priority.ALWAYS);
-        getChildren().addAll(new Label("Response"), new HBox(16, status, timing, size), url,
+        getChildren().addAll(new Label("Response", new IconView(Icon.RESPONSE)), new HBox(16, status, timing, size), url,
                 new Label("Headers"), headers, new HBox(10, new Label("Body"), pretty, save), body);
         clear();
     }

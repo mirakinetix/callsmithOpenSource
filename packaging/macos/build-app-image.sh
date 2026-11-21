@@ -13,6 +13,11 @@ RUNTIME_IMAGE="$PACKAGING_ROOT/runtime"
 OUTPUT_DIR="$PACKAGING_ROOT/dist"
 
 APP_NAME="Callsmith"
+APP_ICON="$PROJECT_ROOT/packaging/macos/Callsmith.icns"
+if [ ! -f "$APP_ICON" ]; then
+    echo "Missing approved Callsmith.icns" >&2
+    exit 1
+fi
 APP_VERSION="1.0.0"
 MAIN_JAR="callsmith-${APP_VERSION}.jar"
 MAIN_CLASS="com.mirakinetix.callsmith.CallsmithApplication"
@@ -160,6 +165,7 @@ JAVAFX_MODULE_PATH="\$APPDIR/lib"
 jpackage \
     --type dmg \
     --name "$APP_NAME" \
+    --icon "$APP_ICON" \
     --app-version "$APP_VERSION" \
     --input "$INPUT_DIR" \
     --main-jar "$MAIN_JAR" \

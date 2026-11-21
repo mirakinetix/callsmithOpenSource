@@ -42,9 +42,10 @@ public class CallsmithApplication extends Application {
 
     @Override
     public void start(Stage stage) {
-        Path databasePath =
-                ApplicationDataDirectory.resolve()
-                        .resolve("callsmith.db");
+        startWorkspace(stage, ApplicationDataDirectory.resolve().resolve("callsmith.db"));
+    }
+
+    void startWorkspace(Stage stage, Path databasePath) {
 
         SqliteDatabase sqliteDatabase =
                 new SqliteDatabase(databasePath);

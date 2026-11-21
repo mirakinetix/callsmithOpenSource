@@ -154,7 +154,7 @@ public final class MainWindow {
         );
 
         Button aboutButton =
-                new Button("About");
+                new Button("About", new IconView(Icon.ABOUT));
 
         aboutButton.setTooltip(
                 new Tooltip("About Callsmith and Mirakinetix")
@@ -198,6 +198,7 @@ public final class MainWindow {
                 );
 
         stage.setTitle("Callsmith - by Mirakinetix");
+        CallsmithWindowIcons.install(stage);
 
         scene.getStylesheets().add(
                 MainWindow.class

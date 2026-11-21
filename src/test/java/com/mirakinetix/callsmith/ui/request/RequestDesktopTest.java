@@ -1,5 +1,6 @@
 package com.mirakinetix.callsmith.ui.request;
 
+import com.mirakinetix.callsmith.DesktopFx;
 import com.mirakinetix.callsmith.application.environment.EnvironmentRepository;
 import com.mirakinetix.callsmith.application.environment.EnvironmentService;
 import com.mirakinetix.callsmith.application.environment.EnvironmentVariableRepository;
@@ -45,12 +46,7 @@ class RequestDesktopTest {
 
     @Test
     void sendsFormatsAndAuthCancelsAndDisplaysBinaryThroughEditorControls() throws Exception {
-        var launched = new CompletableFuture<Void>();
-        Platform.startup(() -> {
-            Platform.setImplicitExit(false);
-            launched.complete(null);
-        });
-        launched.get(10, TimeUnit.SECONDS);
+        DesktopFx.start();
         var slowStarted = new CountDownLatch(1);
         var releaseSlow = new CountDownLatch(1);
         var slowFinished = new CountDownLatch(1);
@@ -143,8 +139,66 @@ class RequestDesktopTest {
             }
         } finally {
             endpoint.stop(0);
-            Platform.exit();
         }
+    }
+
+    @Test
+    void configuresAuthenticationBodyFormatAndTimeoutInOwnedSendOptionsDialog() throws Exception {
+        DesktopFx.start();
+        Stage owner = fx(() -> {
+            var stage = new Stage();
+            var scene = new Scene(new javafx.scene.layout.StackPane(), 490, 390);
+            stage.setScene(scene);
+            stage.show();
+            return stage;
+        });
+        try {
+            for (var auth : List.of(RequestOptions.AuthType.BASIC, BEARER,
+                    RequestOptions.AuthType.API_HEADER, RequestOptions.AuthType.API_QUERY)) {
+                var outcome = new CompletableFuture<RequestOptions>();
+                var task = DesktopFx.action(() -> outcome.complete(RequestOptionsDialog.show(
+                        owner, RequestOptions.DEFAULT).orElseThrow()));
+                var pane = DesktopFx.dialog("Send Options");
+                fx(() -> {
+                    assertSame(owner, ((Stage) pane.getScene().getWindow()).getOwner());
+                    chooseValue(pane, auth);
+                    chooseValue(pane, FORM);
+                    var secret = (javafx.scene.control.PasswordField) pane.lookup(".password-field");
+                    secret.setText("{{fixture_password}}");
+                    for (var node : pane.lookupAll(".text-field")) {
+                        if (node instanceof TextField field && !(field instanceof javafx.scene.control.PasswordField)) {
+                            if (field.getPromptText().startsWith("Username")) field.setText("fixture_name");
+                            if (field.getText().equals("30")) field.setText("0");
+                        }
+                    }
+                    DesktopFx.choose(pane, "Apply");
+                    assertTrue(pane.getScene().getWindow().isShowing(), "Invalid timeout must keep the dialog open");
+                    for (var node : pane.lookupAll(".text-field")) {
+                        if (node instanceof TextField field && field.getText().equals("0")) field.setText("45");
+                    }
+                    ((TextArea) pane.lookup(".text-area")).setText("repeat=first\nrepeat=second");
+                    DesktopFx.choose(pane, "Apply");
+                    return null;
+                });
+                DesktopFx.finish(task);
+                var options = outcome.get(3, TimeUnit.SECONDS);
+                assertEquals(auth, options.authentication().type());
+                assertEquals("{{fixture_password}}", options.authentication().credential());
+                assertEquals(Duration.ofSeconds(45), options.timeout());
+                assertEquals(List.of("first", "second"),
+                        options.fields().stream().map(RequestOptions.Field::value).toList());
+            }
+        } finally {
+            DesktopFx.closeWindows();
+        }
+    }
+
+    @SuppressWarnings("unchecked")
+    private static void chooseValue(javafx.scene.Parent root, Object value) {
+        var combo = (javafx.scene.control.ComboBox<Object>) root.lookupAll(".combo-box").stream()
+                .filter(node -> node instanceof javafx.scene.control.ComboBox<?> choices
+                        && choices.getItems().contains(value)).findFirst().orElseThrow();
+        combo.getSelectionModel().select(value);
     }
 
     private static void send(RequestBuilderView view, String url, String body, RequestOptions options) throws Exception {

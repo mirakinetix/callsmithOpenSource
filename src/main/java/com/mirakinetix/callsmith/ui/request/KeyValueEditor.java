@@ -678,6 +678,9 @@ public final class KeyValueEditor extends VBox {
     private void applyBrandStyles(
             Dialog<?> dialog
     ) {
+        if (getScene() != null && dialog.getOwner() == null) {
+            dialog.initOwner(getScene().getWindow());
+        }
         dialog.getDialogPane()
                 .getStylesheets()
                 .add(
