@@ -82,3 +82,12 @@ rollback to a valid old backup, or changes to ordinary SQLite content.
   are outside the protected storage boundary. Use references such as
   `{{apiToken}}` in saved requests. Collection exports include raw request
   fields and can contain inline credentials.
+
+## HTTP redirect and response boundaries
+
+Redirects are followed only within the same scheme, host and port. Redirect
+locations are not printed in failures or shown verbatim in response headers.
+Credentials for send helpers and selected upload files are session data. Existing
+inline credentials in saved request fields and exported collections remain
+outside Secret Storage. A server can still return supplied credentials in its
+headers or body. Treat response data and saved response files as sensitive.

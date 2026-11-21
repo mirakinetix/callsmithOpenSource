@@ -224,7 +224,7 @@ class JavaHttpRequestExecutorTest {
 
         assertEquals(200, response.statusCode());
         assertEquals("redirect target", response.body());
-        assertEquals(baseUrl + "/final", response.url());
+        assertEquals(baseUrl, response.url(), "Redirect paths and queries may contain credentials");
     }
 
     @Test

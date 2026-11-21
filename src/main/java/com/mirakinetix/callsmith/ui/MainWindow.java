@@ -135,6 +135,8 @@ public final class MainWindow {
         stage.addEventHandler(javafx.stage.WindowEvent.WINDOW_CLOSE_REQUEST, event -> {
             if (!requestBuilderView.allowDiscard()) {
                 event.consume();
+            } else {
+                requestBuilderView.cancelActiveRequest();
             }
         });
 

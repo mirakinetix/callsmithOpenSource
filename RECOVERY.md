@@ -5,11 +5,11 @@
 | P0 request persistence | On the baseline, open a collection and type a request. The editor offers Send but no Save. | Save, Save As, editing, folder destinations and request actions implemented. SQLite lifecycle tests pass. |
 | P0 lost drafts | On the baseline, select a saved request after editing another. The editor replaces its fields immediately. | Confirmation added before replacing a draft or closing the window. Full manual UI exercise remains. |
 | P0 secret storage | The baseline bound the raw value to SQLite. | Passphrase-protected rows and explicit migration implemented. Legacy copies and interactive platform checks remain release considerations. |
-| P0 redirect and response data | The HTTP transport follows normal redirects and presents text responses. Credential forwarding, binary handling and decoded versus wire byte counts need dedicated tests. | Open. |
+| P0 redirect and response data | The baseline followed automatic redirects and decoded all replies as text. | Same-origin policy, binary preservation, and byte counts verified in Part 2. |
 | P0 URL fragments | Add a query field to a URL ending in a fragment. The baseline appends the parameter after the fragment. | Fixed and tested against a loopback server. |
 | P1 Postman round trip | Export a nested collection with a raw body and import the exported JSON. | Basic round trip covered. Wider format compatibility and explicit warnings remain. |
 | P1 API testing | The response inspector displays responses but has no assertions or collection runner. | Open. |
-| P1 HTTP controls | The request editor has one raw body field and the transport uses a fixed timeout. | Cancellation added. Structured form bodies, uploads, configurable timeout, auth helpers and JSON formatting remain. |
+| P1 HTTP controls | The baseline had one raw body field and a fixed timeout. | Part 2 adds temporary auth, structured bodies, file selection, configurable timeout and JSON formatting. |
 | P1 packaging | Both scripts pin dependencies and app version. Windows startup reported missing SQLite module native access. | Added native access option to both scripts. macOS builds and workflow checks remain. |
 | P2 parity | Broader protocol support, scripting and CLI integration. | Deferred. |
 
@@ -38,3 +38,24 @@
 - P1: Review cross-origin credential forwarding and server echoes separately.
   Consider passphrase rotation and a guided backup flow. P2: Evaluate native key
   storage and workstation-specific integration after the portable path is stable.
+
+## Part 2 — HTTP requests and responses
+
+| Baseline issue | Part 2 result |
+| --- | --- |
+| P0 automatic redirects could replay headers or a request body at another origin. | Disabled JDK redirects. Explicit same-origin policy blocks other hosts, ports and schemes, detects loops and permits five hops. Loopback HTTP and TLS destination tests observed no prohibited request. |
+| P0 string decoding lost binary data and reported re-encoded text length. | Retain original bytes, cap wire data and gzip expansion at 8 MiB, classify binary data, and decode common text encodings. |
+| P0 fixed timeout did not give an editor control or an explicit deadline across redirect hops and body reception. | Per-send timeout shares a deadline across the chain. Cancellation interrupts the worker and cancels the JDK exchange. The editor ignores stale results. |
+| P1 auth required manual headers. Structured bodies and uploads were absent. | Added Basic, Bearer, header and query API keys, URL-encoded and multipart forms, MIME defaults, and single-file streaming. Options are temporary and no SQLite schema changed. |
+| P1 unformatted body view offered no binary indication or byte export. | Added bounded raw and formatted JSON previews, binary indication, and byte saving to a new file. |
+
+The optional JavaFX test drives editor controls against a loopback server on a
+desktop. It checks JSON, text, Bearer authorization, cancellation followed by a
+new send, multipart file bytes, and binary display. Native file chooser and
+interactive packaged dialog checks remain separate. The default Maven build passed
+184 tests with one opt-in desktop test skipped. That Windows desktop test passed
+when run separately with the callsmith.desktop.tests property enabled.
+The rebuilt Windows x64 image started on a fresh disposable database with no
+stderr output. Its accessibility tree exposed Send Options, Format JSON and Save
+Response Bytes. The desktop input provider reported unavailable coordinate input
+geometry, so manual packaged dialog and native file chooser checks remain.

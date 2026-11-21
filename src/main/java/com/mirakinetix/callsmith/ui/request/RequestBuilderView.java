@@ -6,6 +6,8 @@ import com.mirakinetix.callsmith.application.http.HttpRequestService;
 import com.mirakinetix.callsmith.domain.environment.Environment;
 import com.mirakinetix.callsmith.domain.environment.EnvironmentVariable;
 import com.mirakinetix.callsmith.domain.http.HttpRequest;
+import com.mirakinetix.callsmith.domain.http.RequestOptions;
+import com.mirakinetix.callsmith.ui.response.ResponsePreview;
 import com.mirakinetix.callsmith.domain.http.HttpResponse;
 import com.mirakinetix.callsmith.domain.request.SavedRequest;
 import com.mirakinetix.callsmith.ui.Icon;
@@ -72,6 +74,17 @@ public final class RequestBuilderView extends BorderPane {
     private java.util.concurrent.Future<?> inFlight;
     private long responseGeneration;
     private final Button cancelSend = new Button("Cancel");
+    private final Button sendOptionsButton = new Button("Send Options...");
+    private RequestOptions sendOptions = RequestOptions.DEFAULT;
+
+    private void resetSendOptions() {
+        sendOptions = RequestOptions.DEFAULT;
+        sendOptionsButton.setText("Send Options...");
+    }
+
+    public void cancelActiveRequest() {
+        cancelRequest();
+    }
 
     private void cancelRequest() {
         responseGeneration++;
@@ -108,12 +121,12 @@ public final class RequestBuilderView extends BorderPane {
     }
 
     public boolean allowDiscard() {
-        if (draft().equals(cleanDraft)) {
+        if (draft().equals(cleanDraft) && sendOptions.equals(RequestOptions.DEFAULT)) {
             return true;
         }
         var dialog = new javafx.scene.control.Alert(
                 javafx.scene.control.Alert.AlertType.CONFIRMATION,
-                "Discard the unsaved changes to this request?",
+                "Discard unsaved changes or temporary send options for this request?",
                 javafx.scene.control.ButtonType.YES, javafx.scene.control.ButtonType.CANCEL);
         dialog.initOwner(getScene().getWindow());
         dialog.getDialogPane().getStylesheets().addAll(getScene().getStylesheets());
@@ -122,6 +135,7 @@ public final class RequestBuilderView extends BorderPane {
     }
 
     public void clearRequest() {
+        resetSendOptions();
         methodSelector.setValue("GET");
         urlField.clear();
         headersEditor.setValues(Map.of());
@@ -133,7 +147,12 @@ public final class RequestBuilderView extends BorderPane {
 
     public void setRequestActions(Runnable save, Runnable saveAs) {
         cancelSend.setDisable(true);
-        cancelSend.setOnAction(event -> cancelRequest());
+        cancelSend.setOnAction(event -> {
+            cancelRequest();
+            responseInspector.displayValidationError("Cancelled");
+        });
+        sendOptionsButton.setOnAction(event -> RequestOptionsDialog.show(
+                getScene().getWindow(), sendOptions).ifPresent(this::setSendOptions));
         Button create = new Button("New Request");
         create.setOnAction(event -> {
             if (allowDiscard()) {
@@ -145,7 +164,7 @@ public final class RequestBuilderView extends BorderPane {
         Button saveAsButton = new Button("Save As");
         saveAsButton.setOnAction(event -> saveAs.run());
         savedRequestActions.getChildren().setAll(
-                requestName, new HBox(6, create, saveButton, saveAsButton));
+                requestName, new HBox(6, create, saveButton, saveAsButton, sendOptionsButton));
         markSaved(null);
     }
 
@@ -186,7 +205,16 @@ public final class RequestBuilderView extends BorderPane {
         buildLayout();
     }
 
+    void setSendOptions(RequestOptions options) {
+        sendOptions = options;
+        sendOptionsButton.setText(options.equals(RequestOptions.DEFAULT) ? "Send Options..." : "Send Options (set)...");
+    }
+
     private void configureControls() {
+        urlField.setId("request-url");
+        requestBody.setId("request-body");
+        sendButton.setId("request-send");
+        cancelSend.setId("request-cancel");
         methodSelector.getItems().addAll(
                 "GET",
                 "POST",
@@ -551,6 +579,7 @@ public final class RequestBuilderView extends BorderPane {
             );
         }
 
+        resetSendOptions();
         methodSelector.setValue(
                 request.method()
         );
@@ -620,7 +649,8 @@ public final class RequestBuilderView extends BorderPane {
                         queryParameters,
                         body.isEmpty()
                                 ? null
-                                : body
+                                : body,
+                        sendOptions
                 );
 
         String environmentId =
@@ -634,6 +664,7 @@ public final class RequestBuilderView extends BorderPane {
                                         request,
                                         environmentId
                                 );
+                        ResponsePreview preview = ResponsePreview.prepare(response);
 
                         Platform.runLater(
                                 () -> {
@@ -644,7 +675,7 @@ public final class RequestBuilderView extends BorderPane {
                                     cancelSend.setDisable(true);
                                     responseInspector
                                             .displayResponse(
-                                                    response
+                                                    response, preview
                                             );
 
                                     sendButton.setDisable(

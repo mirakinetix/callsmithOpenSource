@@ -1,238 +1,138 @@
 package com.mirakinetix.callsmith.ui.response;
 
+import com.mirakinetix.callsmith.domain.http.HttpFailure;
 import com.mirakinetix.callsmith.domain.http.HttpResponse;
+import javafx.concurrent.Task;
 import javafx.geometry.Insets;
+import javafx.scene.control.Alert;
+import javafx.scene.control.Button;
+import javafx.scene.control.CheckBox;
 import javafx.scene.control.Label;
 import javafx.scene.control.TextArea;
 import javafx.scene.layout.HBox;
 import javafx.scene.layout.Priority;
 import javafx.scene.layout.VBox;
+import javafx.stage.FileChooser;
 
-import java.util.Map;
+import java.nio.file.Files;
 
 public final class ResponseInspector extends VBox {
-
-    private final Label responseStatus =
-            new Label("Status: -");
-
-    private final Label responseTiming =
-            new Label("Time: -");
-
-    private final Label responseSize =
-            new Label("Size: -");
-
-    private final Label responseUrl =
-            new Label("URL: -");
-
-    private final TextArea responseHeaders =
-            new TextArea();
-
-    private final TextArea responseBody =
-            new TextArea();
+    private final Label status = new Label();
+    private final Label timing = new Label();
+    private final Label size = new Label();
+    private final Label url = new Label();
+    private final TextArea headers = new TextArea();
+    private final TextArea body = new TextArea();
+    private final CheckBox pretty = new CheckBox("Format JSON");
+    private final Button save = new Button("Save Response Bytes...");
+    private HttpResponse current;
+    private ResponsePreview preview;
 
     public ResponseInspector() {
         setSpacing(8);
         setPadding(new Insets(12));
-
-        configureControls();
-        buildLayout();
-    }
-
-    private void configureControls() {
-        responseHeaders.setEditable(false);
-        responseHeaders.setWrapText(true);
-        responseHeaders.setPrefRowCount(5);
-
-        responseBody.setEditable(false);
-        responseBody.setWrapText(true);
-
-        responseUrl.setWrapText(true);
-    }
-
-    private void buildLayout() {
-        HBox responseMeta =
-                new HBox(
-                        16,
-                        responseStatus,
-                        responseTiming,
-                        responseSize
-                );
-
-        VBox responseHeaderSection =
-                new VBox(
-                        6,
-                        new Label("Headers"),
-                        responseHeaders
-                );
-
-        VBox.setVgrow(
-                responseHeaders,
-                Priority.ALWAYS
-        );
-
-        VBox.setVgrow(
-                responseHeaderSection,
-                Priority.ALWAYS
-        );
-
-        VBox.setVgrow(
-                responseBody,
-                Priority.ALWAYS
-        );
-
-        getChildren().addAll(
-                new Label("Response"),
-                responseMeta,
-                responseUrl,
-                responseHeaderSection,
-                new Label("Body"),
-                responseBody
-        );
+        status.setId("response-status");
+        body.setId("response-body");
+        headers.setEditable(false);
+        headers.setWrapText(true);
+        headers.setPrefRowCount(5);
+        body.setEditable(false);
+        // Avoid reflowing very long lines in the response area.
+        body.setWrapText(false);
+        url.setWrapText(true);
+        pretty.setSelected(true);
+        pretty.setOnAction(event -> displayBody());
+        save.setOnAction(event -> saveResponse());
+        VBox.setVgrow(body, Priority.ALWAYS);
+        getChildren().addAll(new Label("Response"), new HBox(16, status, timing, size), url,
+                new Label("Headers"), headers, new HBox(10, new Label("Body"), pretty, save), body);
+        clear();
     }
 
     public void displaySending() {
-        responseStatus.setText(
-                "Status: Sending..."
-        );
-
-        responseTiming.setText(
-                "Time: -"
-        );
-
-        responseSize.setText(
-                "Size: -"
-        );
-
-        responseUrl.setText(
-                "URL: -"
-        );
-
-        responseHeaders.clear();
-        responseBody.clear();
+        clear();
+        status.setText("Status: Sending...");
     }
 
-    public void displayValidationError(
-            String message
-    ) {
-        responseStatus.setText(
-                "Status: " + message
-        );
-
-        responseTiming.setText(
-                "Time: -"
-        );
-
-        responseSize.setText(
-                "Size: -"
-        );
-
-        responseUrl.setText(
-                "URL: -"
-        );
-
-        responseHeaders.clear();
-        responseBody.clear();
+    public void displayValidationError(String message) {
+        clear();
+        status.setText("Status: " + message);
     }
 
-    public void displayResponse(
-            HttpResponse response
-    ) {
-        responseStatus.setText(
-                "Status: "
-                        + response.statusCode()
-        );
-
-        responseTiming.setText(
-                "Time: "
-                        + response.elapsedMilliseconds()
-                        + " ms"
-        );
-
-        responseSize.setText(
-                "Size: "
-                        + response.sizeBytes()
-                        + " bytes"
-        );
-
-        responseUrl.setText(
-                "URL: "
-                        + response.url()
-        );
-
-        responseHeaders.setText(
-                formatHeaders(
-                        response.headers()
-                )
-        );
-
-        responseBody.setText(
-                response.body() == null
-                        ? ""
-                        : response.body()
-        );
+    public void displayResponse(HttpResponse response, ResponsePreview prepared) {
+        current = response;
+        preview = prepared;
+        status.setText("Status: " + response.statusCode());
+        timing.setText("Time: " + response.elapsedMilliseconds() + " ms");
+        size.setText("Size: " + response.sizeBytes() + " bytes");
+        url.setText("URL: " + (response.url() == null ? "[hidden]" : response.url()));
+        var formatted = new StringBuilder();
+        response.headers().forEach((name, value) -> formatted.append(name).append(": ").append(value).append('\n'));
+        headers.setText(formatted.toString());
+        save.setDisable(!response.hasBytes());
+        pretty.setDisable(prepared.formatted() == null);
+        displayBody();
     }
 
-    public void displayError(
-            RuntimeException exception
-    ) {
-        responseStatus.setText(
-                "Status: Request failed"
-        );
-
-        responseTiming.setText(
-                "Time: -"
-        );
-
-        responseSize.setText(
-                "Size: -"
-        );
-
-        responseUrl.setText(
-                "URL: -"
-        );
-
-        responseHeaders.clear();
-
-        String message =
-                exception.getMessage();
-
-        responseBody.setText(
-                message == null
-                        ? exception.toString()
-                        : message
-        );
+    public void displayError(RuntimeException exception) {
+        clear();
+        status.setText("Status: Request failed");
+        if (exception instanceof HttpFailure failure) {
+            body.setText(failure.getMessage());
+        } else if (exception instanceof IllegalStateException && exception.getMessage() != null) {
+            body.setText(exception.getMessage());
+        } else {
+            body.setText("An unexpected error interrupted the request.");
+        }
     }
 
     public void clear() {
-        responseStatus.setText("Status: -");
-        responseTiming.setText("Time: -");
-        responseSize.setText("Size: -");
-        responseUrl.setText("URL: -");
-        responseHeaders.clear();
-        responseBody.clear();
+        current = null;
+        preview = null;
+        status.setText("Status: -");
+        timing.setText("Time: -");
+        size.setText("Size: -");
+        url.setText("URL: -");
+        headers.clear();
+        body.clear();
+        pretty.setDisable(true);
+        save.setDisable(true);
     }
 
-    private String formatHeaders(
-            Map<String, String> headers
-    ) {
-        if (headers.isEmpty()) {
-            return "";
+    private void displayBody() {
+        if (preview != null) {
+            body.setText(pretty.isSelected() && preview.formatted() != null ? preview.formatted() : preview.raw());
         }
+    }
 
-        StringBuilder formattedHeaders =
-                new StringBuilder();
-
-        headers.forEach(
-                (name, value) ->
-                        formattedHeaders
-                                .append(name)
-                                .append(": ")
-                                .append(value)
-                                .append(
-                                        System.lineSeparator()
-                                )
-        );
-
-        return formattedHeaders.toString();
+    private void saveResponse() {
+        if (current == null || !current.hasBytes()) return;
+        var chooser = new FileChooser();
+        chooser.setTitle("Save Original Response Bytes");
+        chooser.setInitialFileName("response.bin");
+        var file = chooser.showSaveDialog(getScene().getWindow());
+        if (file == null) return;
+        var destination = file.toPath().toAbsolutePath();
+        HttpResponse response = current;
+        Task<Void> task = new Task<>() {
+            @Override protected Void call() throws Exception {
+                if (Files.exists(destination)) throw new java.nio.file.FileAlreadyExistsException("");
+                var temporary = Files.createTempFile(destination.getParent(), ".callsmith-response-", ".tmp");
+                try {
+                    Files.write(temporary, response.bytes());
+                    Files.move(temporary, destination);
+                } finally {
+                    Files.deleteIfExists(temporary);
+                }
+                return null;
+            }
+        };
+        task.setOnFailed(event -> {
+            var alert = new Alert(Alert.AlertType.ERROR,
+                    "Could not save the response. Choose a new filename in a writable folder.");
+            if (getScene() != null) alert.initOwner(getScene().getWindow());
+            alert.show();
+        });
+        Thread.startVirtualThread(task);
     }
 }

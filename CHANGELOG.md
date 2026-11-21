@@ -8,3 +8,5 @@
 - Removed expanded request details from diagnostics and hid response URLs after
   environment substitution changes the URL or query.
 - Documented workspace backup, recovery, and remaining exposure boundaries.
+- Added same-origin redirect handling, bounded binary-safe downloads and JSON previews.
+- Added temporary request authentication, body formats, file uploads and adjustable timeouts.
