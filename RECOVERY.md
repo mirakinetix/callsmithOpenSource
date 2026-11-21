@@ -147,3 +147,29 @@ geometry, so manual packaged dialog and native file chooser checks remain.
 3. Confirm review and required checks on main, review bundled dependency
    notices and version pins, and choose the beta version before preparing
    public artifacts. Do not present syntax checks as macOS runtime validation.
+
+## GitHub synchronization and review
+
+- **Implemented.** The five original recovery commits are preserved under
+  `recovery/callsmith`. The branch is open for review in
+  [draft PR #2](https://github.com/mirakinetix/callsmithOpenSource/pull/2).
+  Local secret scans covered the tracked source and the five original outgoing
+  commits and reported no findings.
+- **CI verified.** At `8e504bb`, GitHub Actions ran Temurin 25 and
+  `mvn -B verify` on Windows and Ubuntu. Each job passed 196 tests with
+  zero failures and errors and skipped the six opt-in desktop tests.
+  [Verification run](https://github.com/mirakinetix/callsmithOpenSource/actions/runs/44914156605)
+  The verification workflow uses read-only repository permissions and produces
+  no installer artifacts. Consult the draft PR checks for the current head.
+- **Desktop verified.** All six opt-in JavaFX tests passed separately on Windows.
+  The Windows x64 app image from `8e504bb` started and shut down normally with a
+  disposable workspace. Packaged controls were readable through accessibility,
+  and packaged mouse interaction could not be exercised from this session.
+- **Manual verification pending.** Check the native Windows upload and response-save
+  choosers and taskbar scaling. Build and launch the current recovery version on
+  Intel and Apple Silicon Macs. Review bundled dependency notices, select a
+  public beta version, and obtain final release approval.
+- **Maintainer review pending.** GitHub reported no active protection on `main`
+  during synchronization. Before merging, require a maintainer-approved pull
+  request, passing Windows and Ubuntu verification, and protection against force
+  pushes and deletion.
