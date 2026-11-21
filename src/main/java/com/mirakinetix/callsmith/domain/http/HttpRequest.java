@@ -9,4 +9,8 @@ public record HttpRequest(
         Map<String, String> queryParameters,
         String body
 ) {
+    @Override
+    public String toString() {
+        return "HttpRequest";
+    }
 }

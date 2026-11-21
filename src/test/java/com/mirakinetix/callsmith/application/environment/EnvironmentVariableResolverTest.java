@@ -4,7 +4,7 @@ import com.mirakinetix.callsmith.domain.environment.EnvironmentVariable;
 import org.junit.jupiter.api.Test;
 
 import java.time.Instant;
-import java.util.List;
+import java.util.Optional;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.mockito.Mockito.mock;
@@ -20,13 +20,7 @@ class EnvironmentVariableResolverTest {
 
     @Test
     void shouldResolveSingleVariable() {
-        when(repository.findByEnvironmentId("env-1"))
-                .thenReturn(List.of(
-                        createVariable(
-                                "baseUrl",
-                                "https://api.example.com"
-                        )
-                ));
+        when(repository.findByName("env-1", "baseUrl")).thenReturn(Optional.of(createVariable("baseUrl", "https://api.example.com")));
 
         String result =
                 resolver.resolve(
@@ -42,17 +36,8 @@ class EnvironmentVariableResolverTest {
 
     @Test
     void shouldResolveMultipleVariables() {
-        when(repository.findByEnvironmentId("env-1"))
-                .thenReturn(List.of(
-                        createVariable(
-                                "host",
-                                "api.example.com"
-                        ),
-                        createVariable(
-                                "version",
-                                "v1"
-                        )
-                ));
+        when(repository.findByName("env-1", "host")).thenReturn(Optional.of(createVariable("host", "api.example.com")));
+        when(repository.findByName("env-1", "version")).thenReturn(Optional.of(createVariable("version", "v1")));
 
         String result =
                 resolver.resolve(
@@ -68,13 +53,7 @@ class EnvironmentVariableResolverTest {
 
     @Test
     void shouldResolveRepeatedVariable() {
-        when(repository.findByEnvironmentId("env-1"))
-                .thenReturn(List.of(
-                        createVariable(
-                                "host",
-                                "api.example.com"
-                        )
-                ));
+        when(repository.findByName("env-1", "host")).thenReturn(Optional.of(createVariable("host", "api.example.com")));
 
         String result =
                 resolver.resolve(
@@ -90,13 +69,7 @@ class EnvironmentVariableResolverTest {
 
     @Test
     void shouldLeaveUnknownVariableUnchanged() {
-        when(repository.findByEnvironmentId("env-1"))
-                .thenReturn(List.of(
-                        createVariable(
-                                "host",
-                                "api.example.com"
-                        )
-                ));
+        when(repository.findByName("env-1", "host")).thenReturn(Optional.of(createVariable("host", "api.example.com")));
 
         String result =
                 resolver.resolve(
@@ -157,8 +130,7 @@ class EnvironmentVariableResolverTest {
 
     @Test
     void shouldReturnOriginalValueWhenEnvironmentHasNoVariables() {
-        when(repository.findByEnvironmentId("env-1"))
-                .thenReturn(List.of());
+
 
         String value =
                 "https://{{host}}/users";
@@ -177,13 +149,7 @@ class EnvironmentVariableResolverTest {
 
     @Test
     void shouldTrimVariableNameInsidePlaceholder() {
-        when(repository.findByEnvironmentId("env-1"))
-                .thenReturn(List.of(
-                        createVariable(
-                                "host",
-                                "api.example.com"
-                        )
-                ));
+        when(repository.findByName("env-1", "host")).thenReturn(Optional.of(createVariable("host", "api.example.com")));
 
         String result =
                 resolver.resolve(
@@ -199,8 +165,7 @@ class EnvironmentVariableResolverTest {
 
     @Test
     void shouldNotResolveVariableFromDifferentEnvironment() {
-        when(repository.findByEnvironmentId("env-1"))
-                .thenReturn(List.of());
+
 
         String value =
                 "https://{{host}}/users";
@@ -215,6 +180,11 @@ class EnvironmentVariableResolverTest {
                 value,
                 result
         );
+    }
+
+    @Test
+    void preservesDifferentSpellingsOfAnUnknownPlaceholder() {
+        assertEquals("{{ missing }}/{{missing}}", resolver.resolve("{{ missing }}/{{missing}}", "env-1"));
     }
 
     private EnvironmentVariable createVariable(

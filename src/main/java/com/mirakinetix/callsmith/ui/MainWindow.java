@@ -5,6 +5,7 @@ import com.mirakinetix.callsmith.application.collection.CollectionWorkspaceServi
 import com.mirakinetix.callsmith.application.collection.importation.CollectionImportPersistenceService;
 import com.mirakinetix.callsmith.application.collection.importation.CollectionImportService;
 import com.mirakinetix.callsmith.application.environment.EnvironmentService;
+import com.mirakinetix.callsmith.application.environment.SecretStorage;
 import com.mirakinetix.callsmith.application.environment.EnvironmentVariableService;
 import com.mirakinetix.callsmith.application.http.HttpRequestService;
 import com.mirakinetix.callsmith.ui.collection.CollectionSidebar;
@@ -54,6 +55,7 @@ public final class MainWindow {
     private final CollectionImportService collectionImportService;
     private final CollectionImportPersistenceService collectionImportPersistenceService;
     private final ExecutorService requestExecutor;
+    private final SecretStorage secretStorage;
 
     public MainWindow(
             HttpRequestService httpRequestService,
@@ -63,8 +65,10 @@ public final class MainWindow {
             CollectionExportService collectionExportService,
             CollectionImportService collectionImportService,
             CollectionImportPersistenceService collectionImportPersistenceService,
+            SecretStorage secretStorage,
             ExecutorService requestExecutor
     ) {
+        this.secretStorage = secretStorage;
         this.httpRequestService =
                 httpRequestService;
 
@@ -103,6 +107,7 @@ public final class MainWindow {
                 new EnvironmentManager(
                         environmentService,
                         environmentVariableService,
+                        secretStorage,
                         requestBuilderView::refreshEnvironments
                 );
 

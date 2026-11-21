@@ -6,6 +6,7 @@ import com.mirakinetix.callsmith.domain.http.HttpResponse;
 
 import java.util.LinkedHashMap;
 import java.util.Map;
+import java.util.Objects;
 
 public final class HttpRequestService {
 
@@ -51,9 +52,22 @@ public final class HttpRequestService {
                         environmentId
                 );
 
-        return requestExecutor.execute(
-                resolvedRequest
-        );
+        HttpResponse response;
+        try {
+            response = requestExecutor.execute(resolvedRequest);
+        } catch (RuntimeException exception) {
+            if (!request.equals(resolvedRequest)) {
+                // Transport exceptions can embed an expanded URI or header.
+                throw new IllegalStateException("HTTP request failed after environment variable substitution.");
+            }
+            throw exception;
+        }
+        if (!Objects.equals(request.url(), resolvedRequest.url())
+                || !Objects.equals(request.queryParameters(), resolvedRequest.queryParameters())) {
+            return new HttpResponse(response.statusCode(), response.reasonPhrase(), response.headers(),
+                    response.body(), response.elapsedMilliseconds(), response.sizeBytes(), null);
+        }
+        return response;
     }
 
     private HttpRequest resolveRequest(

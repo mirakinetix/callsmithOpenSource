@@ -53,6 +53,29 @@ class HttpRequestServiceTest {
     }
 
     @Test
+    void hidesExpandedUrlAndTransportDiagnostics() {
+        String fictional = "fixture-credential";
+        var request = new HttpRequest("GET", "https://example.test/{{key}}", Map.of(), Map.of(), null);
+        var response = new HttpResponse(200, "OK", Map.of(), fictional, 10, 20,
+                "https://example.test/" + fictional);
+        when(variableResolver.resolve(request.url(), "env-1")).thenReturn(response.url());
+        when(requestExecutor.execute(any(HttpRequest.class))).thenReturn(response)
+                .thenThrow(new IllegalArgumentException("Failed at " + response.url()));
+
+        var result = service.execute(request, "env-1");
+        org.junit.jupiter.api.Assertions.assertNull(result.url());
+        assertEquals(fictional, result.body());
+        org.junit.jupiter.api.Assertions.assertFalse(response.toString().contains(fictional));
+        var expanded = new HttpRequest("GET", response.url(), Map.of("Authorization", fictional),
+                Map.of(), fictional);
+        org.junit.jupiter.api.Assertions.assertFalse(expanded.toString().contains(fictional));
+        var failure = org.junit.jupiter.api.Assertions.assertThrows(IllegalStateException.class,
+                () -> service.execute(request, "env-1"));
+        org.junit.jupiter.api.Assertions.assertNull(failure.getCause());
+        org.junit.jupiter.api.Assertions.assertFalse(failure.getMessage().contains(fictional));
+    }
+
+    @Test
     void shouldResolveUrlBeforeExecution() {
         HttpRequest request =
                 createRequest();

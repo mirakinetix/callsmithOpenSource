@@ -367,11 +367,13 @@ public final class RequestBuilderView extends BorderPane {
             return;
         }
 
-        List<EnvironmentVariable> variables =
-                environmentVariableService
-                        .findByEnvironmentId(
-                                environmentId
-                        );
+        List<EnvironmentVariable> variables;
+        try {
+            variables = environmentVariableService.findSummariesByEnvironmentId(environmentId);
+        } catch (IllegalStateException exception) {
+            variablesPanel.getChildren().add(new Label("Environment variables could not be read."));
+            return;
+        }
 
         if (variables.isEmpty()) {
             variablesPanel.getChildren().add(

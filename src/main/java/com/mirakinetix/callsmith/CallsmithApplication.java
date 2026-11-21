@@ -25,6 +25,7 @@ import com.mirakinetix.callsmith.infrastructure.persistence.sqlite.SqliteDatabas
 import com.mirakinetix.callsmith.infrastructure.persistence.sqlite.SqliteEnvironmentRepository;
 import com.mirakinetix.callsmith.infrastructure.persistence.sqlite.SqliteEnvironmentVariableRepository;
 import com.mirakinetix.callsmith.infrastructure.persistence.sqlite.SqliteSavedRequestRepository;
+import com.mirakinetix.callsmith.infrastructure.persistence.sqlite.SqliteSecretStorage;
 import com.mirakinetix.callsmith.ui.MainWindow;
 import javafx.application.Application;
 import javafx.stage.Stage;
@@ -37,6 +38,7 @@ import java.util.concurrent.Executors;
 public class CallsmithApplication extends Application {
 
     private ExecutorService requestExecutor;
+    private SqliteSecretStorage secretStorage;
 
     @Override
     public void start(Stage stage) {
@@ -60,10 +62,12 @@ public class CallsmithApplication extends Application {
                         sqliteDatabase
                 );
 
+        secretStorage = new SqliteSecretStorage(sqliteDatabase);
+
         SqliteEnvironmentVariableRepository
                 environmentVariableRepository =
                 new SqliteEnvironmentVariableRepository(
-                        sqliteDatabase
+                        sqliteDatabase, secretStorage
                 );
 
         EnvironmentService environmentService =
@@ -173,6 +177,7 @@ public class CallsmithApplication extends Application {
                         collectionExportService,
                         collectionImportService,
                         collectionImportPersistenceService,
+                        secretStorage,
                         requestExecutor
                 );
 
@@ -181,6 +186,9 @@ public class CallsmithApplication extends Application {
 
     @Override
     public void stop() {
+        if (secretStorage != null) {
+            secretStorage.lock();
+        }
         if (requestExecutor != null) {
             requestExecutor.close();
         }

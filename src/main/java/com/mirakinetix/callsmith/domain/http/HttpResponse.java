@@ -11,4 +11,9 @@ public record HttpResponse(
         long sizeBytes,
         String url
 ) {
+    @Override
+    public String toString() {
+        return "HttpResponse[statusCode=" + statusCode + ", elapsedMilliseconds="
+                + elapsedMilliseconds + ", sizeBytes=" + sizeBytes + "]";
+    }
 }
