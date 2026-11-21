@@ -65,6 +65,89 @@ public final class RequestBuilderView extends BorderPane {
             );
 
     private Runnable manageEnvironmentsAction;
+    private final VBox savedRequestActions = new VBox(6);
+    private final Label requestName = new Label();
+    private SavedRequest savedRequest;
+    private Draft cleanDraft;
+    private java.util.concurrent.Future<?> inFlight;
+    private long responseGeneration;
+    private final Button cancelSend = new Button("Cancel");
+
+    private void cancelRequest() {
+        responseGeneration++;
+        if (inFlight != null) {
+            inFlight.cancel(true);
+            inFlight = null;
+        }
+        sendButton.setDisable(false);
+        cancelSend.setDisable(true);
+        responseInspector.clear();
+    }
+
+    public record Draft(String method, String url, Map<String, String> headers,
+                        Map<String, String> query, String body) {}
+
+    public Draft draft() {
+        return new Draft(methodSelector.getValue(), urlField.getText(),
+                headersEditor.getValues(), queryParametersEditor.getValues(), requestBody.getText());
+    }
+
+    public SavedRequest savedRequest() {
+        return savedRequest;
+    }
+
+    public void markSaved(SavedRequest request) {
+        savedRequest = request;
+        cleanDraft = draft();
+        requestName.setText(request == null ? "Unsaved request" : request.name());
+    }
+
+    public void updateSavedMetadata(SavedRequest request) {
+        savedRequest = request;
+        requestName.setText(request.name());
+    }
+
+    public boolean allowDiscard() {
+        if (draft().equals(cleanDraft)) {
+            return true;
+        }
+        var dialog = new javafx.scene.control.Alert(
+                javafx.scene.control.Alert.AlertType.CONFIRMATION,
+                "Discard the unsaved changes to this request?",
+                javafx.scene.control.ButtonType.YES, javafx.scene.control.ButtonType.CANCEL);
+        dialog.initOwner(getScene().getWindow());
+        dialog.getDialogPane().getStylesheets().addAll(getScene().getStylesheets());
+        return dialog.showAndWait().orElse(javafx.scene.control.ButtonType.CANCEL)
+                == javafx.scene.control.ButtonType.YES;
+    }
+
+    public void clearRequest() {
+        methodSelector.setValue("GET");
+        urlField.clear();
+        headersEditor.setValues(Map.of());
+        queryParametersEditor.setValues(Map.of());
+        requestBody.clear();
+        cancelRequest();
+        markSaved(null);
+    }
+
+    public void setRequestActions(Runnable save, Runnable saveAs) {
+        cancelSend.setDisable(true);
+        cancelSend.setOnAction(event -> cancelRequest());
+        Button create = new Button("New Request");
+        create.setOnAction(event -> {
+            if (allowDiscard()) {
+                clearRequest();
+            }
+        });
+        Button saveButton = new Button("Save");
+        saveButton.setOnAction(event -> save.run());
+        Button saveAsButton = new Button("Save As");
+        saveAsButton.setOnAction(event -> saveAs.run());
+        savedRequestActions.getChildren().setAll(
+                requestName, new HBox(6, create, saveButton, saveAsButton));
+        markSaved(null);
+    }
 
     private final KeyValueEditor queryParametersEditor =
             new KeyValueEditor(
@@ -366,7 +449,8 @@ public final class RequestBuilderView extends BorderPane {
                         8,
                         methodSelector,
                         urlField,
-                        sendButton
+                        sendButton,
+                        cancelSend
                 );
 
         HBox.setHgrow(
@@ -384,6 +468,7 @@ public final class RequestBuilderView extends BorderPane {
                 new VBox(
                         8,
                         requestContentTitle,
+                        savedRequestActions,
                         requestBar,
                         variablesPanel,
                         new Label("Query Parameters"),
@@ -486,7 +571,8 @@ public final class RequestBuilderView extends BorderPane {
                         : request.body()
         );
 
-        responseInspector.clear();
+        cancelRequest();
+        markSaved(request);
     }
 
     public void loadSavedRequest(
@@ -513,8 +599,9 @@ public final class RequestBuilderView extends BorderPane {
             return;
         }
 
+        long generation = ++responseGeneration;
         sendButton.setDisable(true);
-
+        cancelSend.setDisable(false);
         responseInspector.displaySending();
 
         Map<String, String> queryParameters =
@@ -537,7 +624,7 @@ public final class RequestBuilderView extends BorderPane {
         String environmentId =
                 getSelectedEnvironmentId();
 
-        requestExecutor.submit(
+        inFlight = requestExecutor.submit(
                 () -> {
                     try {
                         HttpResponse response =
@@ -548,6 +635,11 @@ public final class RequestBuilderView extends BorderPane {
 
                         Platform.runLater(
                                 () -> {
+                                    if (generation != responseGeneration) {
+                                        return;
+                                    }
+                                    inFlight = null;
+                                    cancelSend.setDisable(true);
                                     responseInspector
                                             .displayResponse(
                                                     response
@@ -562,6 +654,11 @@ public final class RequestBuilderView extends BorderPane {
                     } catch (RuntimeException exception) {
                         Platform.runLater(
                                 () -> {
+                                    if (generation != responseGeneration) {
+                                        return;
+                                    }
+                                    inFlight = null;
+                                    cancelSend.setDisable(true);
                                     responseInspector
                                             .displayError(
                                                     exception

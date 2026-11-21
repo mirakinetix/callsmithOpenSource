@@ -44,3 +44,16 @@ Clone the repository and build with Maven:
 
 ```text
 mvn clean test
+## Saved request workflow
+
+Create a collection from the sidebar. Use **New Request** in the editor, enter a URL, and
+choose **Save** to name the request and select a collection or folder. After reopening a
+saved request, **Save** updates that request. **Save As** creates a separate copy.
+Right-click collections or folders to create nested folders. Right-click saved requests
+to rename, duplicate, move, or delete them. A folder must be empty before it can be deleted.
+While sending, use **Cancel** to interrupt the local request.
+
+To check the desktop workflow, use a disposable workspace and fictional data. Create a
+collection and nested folder, save an example request, reopen and edit it, and confirm
+that saving twice leaves one entry. Move it between folders, restart the app, then export
+and re-import the collection. Use a local test endpoint for send and cancel checks.

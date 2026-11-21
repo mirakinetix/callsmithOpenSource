@@ -169,7 +169,7 @@ jpackage \
     --java-options "--module-path=$JAVAFX_MODULE_PATH" \
     --java-options "--add-modules=javafx.controls,javafx.fxml" \
     --java-options "--enable-native-access=javafx.graphics" \
-    --java-options "--enable-native-access=ALL-UNNAMED" \
+    --java-options "--enable-native-access=ALL-UNNAMED,org.xerial.sqlitejdbc" \
     --mac-package-identifier "com.mirakinetix.callsmith"
 
 # ------------------------------------------------------------

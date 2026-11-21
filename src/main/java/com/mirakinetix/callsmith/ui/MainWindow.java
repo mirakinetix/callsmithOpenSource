@@ -117,8 +117,21 @@ public final class MainWindow {
                         collectionExportService,
                         collectionImportService,
                         collectionImportPersistenceService,
-                        requestBuilderView::loadRequest
+                        request -> {
+                            if (!requestBuilderView.allowDiscard()) {
+                                return false;
+                            }
+                            requestBuilderView.loadRequest(request);
+                            return true;
+                        }
                 );
+
+        collectionSidebar.bindRequestEditor(requestBuilderView);
+        stage.addEventHandler(javafx.stage.WindowEvent.WINDOW_CLOSE_REQUEST, event -> {
+            if (!requestBuilderView.allowDiscard()) {
+                event.consume();
+            }
+        });
 
         Label productName =
                 new Label("Callsmith");

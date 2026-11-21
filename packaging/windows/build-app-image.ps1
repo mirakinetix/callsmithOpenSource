@@ -191,7 +191,7 @@ $JavaFxModulePath = '--module-path=$APPDIR\lib'
     --java-options $JavaFxModulePath `
     --java-options "--add-modules=javafx.controls,javafx.fxml" `
     --java-options "--enable-native-access=javafx.graphics" `
-    --java-options "--enable-native-access=ALL-UNNAMED" `
+    --java-options "--enable-native-access=ALL-UNNAMED,org.xerial.sqlitejdbc" `
     --win-console
 
 if ($LASTEXITCODE -ne 0) {

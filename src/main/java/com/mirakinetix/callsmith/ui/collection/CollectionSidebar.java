@@ -35,7 +35,13 @@ import java.time.Instant;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
-import java.util.function.Consumer;
+import java.util.function.Predicate;
+import java.util.ArrayList;
+import com.mirakinetix.callsmith.ui.request.RequestBuilderView;
+import javafx.scene.control.ChoiceDialog;
+import javafx.scene.control.ContextMenu;
+import javafx.scene.control.MenuItem;
+import javafx.scene.control.TextInputDialog;
 
 public final class CollectionSidebar extends BorderPane {
 
@@ -46,7 +52,7 @@ public final class CollectionSidebar extends BorderPane {
     private final CollectionImportService importService;
     private final CollectionImportPersistenceService
             importPersistenceService;
-    private final Consumer<SavedRequest> requestSelectionHandler;
+    private final Predicate<SavedRequest> requestSelectionHandler;
 
     private final TreeView<WorkspaceItem> treeView =
             new TreeView<>();
@@ -57,7 +63,7 @@ public final class CollectionSidebar extends BorderPane {
             CollectionImportService importService,
             CollectionImportPersistenceService
                     importPersistenceService,
-            Consumer<SavedRequest> requestSelectionHandler
+            Predicate<SavedRequest> requestSelectionHandler
     ) {
         if (workspaceService == null) {
             throw new IllegalArgumentException(
@@ -110,6 +116,224 @@ public final class CollectionSidebar extends BorderPane {
 
         buildLayout();
         loadCollections();
+    }
+
+    private RequestBuilderView editor;
+    private boolean restoringSelection;
+
+    public void bindRequestEditor(RequestBuilderView editor) {
+        this.editor = editor;
+        editor.setRequestActions(() -> saveEditor(false), () -> saveEditor(true));
+    }
+
+    private void saveEditor(boolean copy) {
+        SavedRequest existing = editor.savedRequest();
+        try {
+            if (!copy && existing != null) {
+                SavedRequest current = workspaceService.findSavedRequest(existing.id())
+                        .orElseThrow(() -> new IllegalArgumentException(
+                                "The saved request was deleted. Use Save As to keep your draft."));
+                persistEditor(current, current.collectionId(), current.folderId(), current.name());
+                return;
+            }
+
+            Destination destination = chooseDestination("Save Request");
+            if (destination == null) {
+                return;
+            }
+            promptName("Save Request", existing == null ? "" : existing.name() + " copy")
+                    .ifPresent(name -> persistEditor(null, destination.collectionId(),
+                            destination.folderId(), name));
+        } catch (RuntimeException exception) {
+            showError("Unable to save request", workspaceError(exception));
+        }
+    }
+
+    private void persistEditor(SavedRequest existing, String collectionId,
+                               String folderId, String name) {
+        RequestBuilderView.Draft draft = editor.draft();
+        if (draft.url().isBlank()) {
+            throw new IllegalArgumentException("Enter a URL before saving.");
+        }
+
+        Instant now = Instant.now();
+        SavedRequest saved = workspaceService.saveRequest(new SavedRequest(
+                existing == null ? UUID.randomUUID().toString() : existing.id(),
+                collectionId, folderId, name, draft.method(), draft.url().trim(),
+                draft.headers(), draft.query(), draft.body(),
+                existing == null ? 0 : existing.sortOrder(),
+                existing == null ? now : existing.createdAt(), now));
+        editor.markSaved(saved);
+        reloadAfterWrite();
+    }
+
+    private Destination chooseDestination(String title) {
+        List<Destination> destinations = new ArrayList<>();
+        collectDestinations(treeView.getRoot(), "", null, destinations);
+        if (destinations.isEmpty()) {
+            showInformation(title, "Create a collection first.");
+            return null;
+        }
+        TreeItem<WorkspaceItem> selected = treeView.getSelectionModel().getSelectedItem();
+        Destination initial = selected == null ? destinations.getFirst() : destinations.stream()
+                .filter(destination -> destination.selectionId().equals(selected.getValue().id()))
+                .findFirst().orElse(destinations.getFirst());
+        ChoiceDialog<Destination> dialog = new ChoiceDialog<>(initial, destinations);
+        prepareDialog(dialog, title);
+        dialog.setHeaderText("Select a collection or folder");
+        return dialog.showAndWait().orElse(null);
+    }
+
+    private void collectDestinations(TreeItem<WorkspaceItem> parent, String path,
+                                     String collectionId, List<Destination> destinations) {
+        for (TreeItem<WorkspaceItem> child : parent.getChildren()) {
+            WorkspaceItem item = child.getValue();
+            if (item.type() == WorkspaceItemType.REQUEST) {
+                continue;
+            }
+            String childPath = path.isEmpty() ? item.displayName() : path + " / " + item.displayName();
+            boolean collection = item.type() == WorkspaceItemType.COLLECTION;
+            String ownerId = collection ? item.id() : collectionId;
+            destinations.add(new Destination(ownerId, collection ? null : item.id(), childPath));
+            collectDestinations(child, childPath, ownerId, destinations);
+        }
+    }
+
+    private record Destination(String collectionId, String folderId, String path) {
+        String selectionId() {
+            return folderId == null ? collectionId : folderId;
+        }
+
+        @Override
+        public String toString() {
+            return path;
+        }
+    }
+
+    private java.util.Optional<String> promptName(String title, String initial) {
+        TextInputDialog dialog = new TextInputDialog(initial);
+        prepareDialog(dialog, title);
+        dialog.setHeaderText(null);
+        dialog.setContentText("Name");
+        return dialog.showAndWait().map(String::trim).filter(name -> !name.isEmpty());
+    }
+
+    private void prepareDialog(Dialog<?> dialog, String title) {
+        dialog.setTitle(title);
+        if (getScene() != null) {
+            dialog.initOwner(getScene().getWindow());
+        }
+        applyBrandStyles(dialog);
+    }
+
+    private boolean confirm(String title, String message) {
+        Alert alert = new Alert(Alert.AlertType.CONFIRMATION, message, ButtonType.OK, ButtonType.CANCEL);
+        prepareDialog(alert, title);
+        alert.setHeaderText(null);
+        return alert.showAndWait().orElse(ButtonType.CANCEL) == ButtonType.OK;
+    }
+
+    private void reloadAfterWrite() {
+        try {
+            loadCollections();
+        } catch (RuntimeException exception) {
+            showError("Workspace refresh failed", "The change was saved, but the tree could not be refreshed.");
+        }
+    }
+
+    private String workspaceError(RuntimeException exception) {
+        if (exception instanceof IllegalArgumentException) {
+            return exception.getMessage();
+        }
+        return "Callsmith could not access the workspace database.";
+    }
+
+    private MenuItem action(String label, Runnable operation) {
+        MenuItem menuItem = new MenuItem(label);
+        menuItem.setOnAction(event -> {
+            try {
+                operation.run();
+            } catch (RuntimeException exception) {
+                showError(label, workspaceError(exception));
+            }
+        });
+        return menuItem;
+    }
+
+    private ContextMenu contextMenu(WorkspaceItem item, TreeItem<WorkspaceItem> treeItem) {
+        if (item.type() != WorkspaceItemType.REQUEST) {
+            TreeItem<WorkspaceItem> ancestor = treeItem;
+            while (ancestor.getValue().type() == WorkspaceItemType.FOLDER) {
+                ancestor = ancestor.getParent();
+            }
+            String collectionId = ancestor.getValue().id();
+            String parentId = item.type() == WorkspaceItemType.FOLDER ? item.id() : null;
+            ContextMenu menu = new ContextMenu(action("New Folder", () ->
+                    promptName("New Folder", "").ifPresent(name -> {
+                        workspaceService.createFolder(collectionId, parentId, name);
+                        reloadAfterWrite();
+                    })));
+            if (parentId != null) {
+                menu.getItems().addAll(
+                        action("Rename Folder", () -> promptName("Rename Folder", item.displayName())
+                                .ifPresent(name -> {
+                                    workspaceService.renameFolder(item.id(), name);
+                                    reloadAfterWrite();
+                                })),
+                        action("Delete Empty Folder", () -> {
+                            if (confirm("Delete Folder", "Delete " + item.displayName() + "?")) {
+                                workspaceService.deleteEmptyFolder(item.id());
+                                reloadAfterWrite();
+                            }
+                        }));
+            }
+            return menu;
+        }
+
+        SavedRequest request = item.request();
+        return new ContextMenu(
+                action("Rename Request", () -> promptName("Rename Request", request.name())
+                        .ifPresent(name -> updateRequest(request, name, null, false))),
+                action("Duplicate Request", () ->
+                        updateRequest(request, request.name() + " copy", null, true)),
+                action("Move Request", () -> {
+                    Destination destination = chooseDestination("Move Request");
+                    if (destination != null) {
+                        updateRequest(request, request.name(), destination, false);
+                    }
+                }),
+                action("Delete Request", () -> {
+                    boolean active = isOpen(request);
+                    if (confirm("Delete Request", "Delete " + request.name() + "?")
+                            && (!active || editor.allowDiscard())) {
+                        workspaceService.deleteRequest(request.id());
+                        if (active) {
+                            editor.clearRequest();
+                        }
+                        reloadAfterWrite();
+                    }
+                }));
+    }
+
+    private boolean isOpen(SavedRequest request) {
+        return editor != null && editor.savedRequest() != null
+                && editor.savedRequest().id().equals(request.id());
+    }
+
+    private void updateRequest(SavedRequest request, String name, Destination destination, boolean copy) {
+        SavedRequest current = workspaceService.findSavedRequest(request.id()).orElseThrow(
+                () -> new IllegalArgumentException("This request no longer exists."));
+        Instant now = Instant.now();
+        SavedRequest saved = workspaceService.saveRequest(new SavedRequest(
+                copy ? UUID.randomUUID().toString() : current.id(),
+                destination == null ? current.collectionId() : destination.collectionId(),
+                destination == null ? current.folderId() : destination.folderId(),
+                name, current.method(), current.url(), current.headers(), current.queryParameters(),
+                current.body(), current.sortOrder(), copy ? now : current.createdAt(), now));
+        if (!copy && isOpen(current)) {
+            editor.updateSavedMetadata(saved);
+        }
+        reloadAfterWrite();
     }
 
     private void buildLayout() {
@@ -220,8 +444,18 @@ public final class CollectionSidebar extends BorderPane {
         treeView.getSelectionModel()
                 .selectedItemProperty()
                 .addListener(
-                        (observable, oldItem, newItem) ->
-                                handleSelection(newItem)
+                        (observable, oldItem, newItem) -> {
+                            if (!restoringSelection && !handleSelection(newItem)) {
+                                javafx.application.Platform.runLater(() -> {
+                                    restoringSelection = true;
+                                    try {
+                                        treeView.getSelectionModel().select(oldItem);
+                                    } finally {
+                                        restoringSelection = false;
+                                    }
+                                });
+                            }
+                        }
                 );
 
         setTop(header);
@@ -868,29 +1102,16 @@ public final class CollectionSidebar extends BorderPane {
         }
     }
 
-    private void handleSelection(
+    private boolean handleSelection(
             TreeItem<WorkspaceItem> selectedItem
     ) {
         if (selectedItem == null
                 || selectedItem.getValue() == null) {
-            return;
+            return true;
         }
-
-        WorkspaceItem item =
-                selectedItem.getValue();
-
-        if (item.type() != WorkspaceItemType.REQUEST) {
-            return;
-        }
-
-        SavedRequest request =
-                item.request();
-
-        if (request != null) {
-            requestSelectionHandler.accept(
-                    request
-            );
-        }
+        WorkspaceItem item = selectedItem.getValue();
+        return item.type() != WorkspaceItemType.REQUEST
+                || requestSelectionHandler.test(item.request());
     }
 
     private void applyBrandStyles(
@@ -939,7 +1160,7 @@ public final class CollectionSidebar extends BorderPane {
         alert.showAndWait();
     }
 
-    private static final class WorkspaceTreeCell
+    private final class WorkspaceTreeCell
             extends TreeCell<WorkspaceItem> {
 
         @Override
@@ -955,10 +1176,13 @@ public final class CollectionSidebar extends BorderPane {
             if (empty || item == null) {
                 setText(null);
                 setGraphic(null);
+                setContextMenu(null);
                 return;
             }
 
             setText(item.displayName());
+            TreeItem<WorkspaceItem> treeItem = getTreeItem();
+            setContextMenu(treeItem == null ? null : contextMenu(item, treeItem));
 
             setGraphic(
                     new IconView(

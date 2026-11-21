@@ -112,9 +112,13 @@ public final class JavaHttpRequestExecutor implements RequestExecutor {
                 .map(entry -> encode(entry.getKey()) + "=" + encode(entry.getValue()))
                 .collect(Collectors.joining("&"));
 
-        String separator = baseUri.getQuery() == null ? "?" : "&";
-
-        return URI.create(baseUri + separator + queryString);
+        String rawUrl = baseUri.toString();
+        int fragmentStart = rawUrl.indexOf('#');
+        String beforeFragment = fragmentStart < 0 ? rawUrl : rawUrl.substring(0, fragmentStart);
+        String fragment = fragmentStart < 0 ? "" : rawUrl.substring(fragmentStart);
+        String existingQuery = baseUri.getRawQuery();
+        String separator = existingQuery == null ? "?" : existingQuery.isEmpty() ? "" : "&";
+        return URI.create(beforeFragment + separator + queryString + fragment);
     }
 
     private String encode(String value) {
