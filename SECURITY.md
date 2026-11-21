@@ -91,8 +91,12 @@ version is outside the published affected ranges for
 [Core property-name limits](https://github.com/FasterXML/jackson-core/security/advisories/GHSA-649p-m576-vr99),
 [Databind Path binding](https://github.com/FasterXML/jackson-databind/security/advisories/GHSA-wjgm-6hv5-3cvf),
 [forward-reference completion](https://github.com/FasterXML/jackson-databind/security/advisories/GHSA-cxp5-3px4-pw24),
+the Core advisories for [error-token length](https://github.com/advisories/GHSA-7hhh-6rmp-j9qf)
+and [numeric matching](https://github.com/advisories/GHSA-p6pp-m3f8-5c89),
 and the later [polymorphic validation advisory](https://github.com/FasterXML/jackson-databind/security/advisories/GHSA-m8xf-2cr7-77ph).
-The collection reader retains its application limits. Regression fixtures check
+The reviewed [JsonView advisory](https://github.com/advisories/GHSA-5gvw-p9qm-jgwh)
+lists 2.21.5 as the patched release for the 2.21 branch. The collection reader
+retains its application limits. Regression fixtures check
 bounded oversized property names in UTF-8 and UTF-16.
 
 ## HTTP redirect and response boundaries
