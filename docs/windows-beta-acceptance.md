@@ -31,9 +31,11 @@ directory and start this fixture using Python 3.
 Set-Location -LiteralPath $betaRoot
 @'
 import json
+from base64 import b64encode
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from time import sleep
+from urllib.parse import parse_qs, urlsplit
 
 origin = "http://127.0.0.1:8765"
 Path("upload.txt").write_bytes(b"callsmith-upload")
@@ -57,27 +59,51 @@ Path("openapi.json").write_text(json.dumps({
 
 class Fixture(BaseHTTPRequestHandler):
     def do_GET(self):
+        target = urlsplit(self.path)
+        query = parse_qs(target.query)
+        if target.path == "/assertions":
+            self.reply(200, b'{"ready":true}', "application/json")
+            return
+        if target.path == "/inspect":
+            ok = query.get("page") == ["2"] and self.headers.get("X-Pilot") == "fixture"
+            self.check(ok)
+            return
+        if target.path == "/auth-basic":
+            basic = "Basic " + b64encode(b"beta-user:fictional-basic").decode("ascii")
+            self.check(self.headers.get("Authorization") == basic)
+            return
+        if target.path == "/auth-key":
+            self.check(self.headers.get("X-Pilot-Key") == "fictional-pilot-key")
+            return
         self.reply(200, b"health-ok\n")
 
     def do_POST(self):
+        path = urlsplit(self.path).path
         body = self.rfile.read(int(self.headers.get("Content-Length", "0")))
-        print("received POST", self.path, flush=True)
-        if self.path == "/slow":
+        print("received POST", path, flush=True)
+        if path == "/slow":
             sleep(10)
         ok = True
-        if self.path == "/json":
+        if path == "/json":
             ok = ("application/json" in self.headers.get("Content-Type", "")
                   and body == b'{"beta":true}')
-        if self.path == "/auth":
+        if path == "/auth":
             ok = self.headers.get("Authorization") == "Bearer beta-fictional-token"
-        if self.path == "/upload":
+        if path == "/upload":
             ok = ("multipart/form-data" in self.headers.get("Content-Type", "")
                   and b"callsmith-upload" in body)
         self.reply(200 if ok else 400, b"post-ok\n" if ok else b"invalid fixture\n")
 
-    def reply(self, code, body):
+    def check(self, ok):
+        self.reply(200 if ok else 400, b"fixture-ok\n" if ok else b"invalid fixture\n")
+
+    def log_request(self, code="-", size="-"):
+        print(self.command, urlsplit(self.path).path, code, flush=True)
+
+    def reply(self, code, body, content_type="text/plain"):
         self.send_response(code)
-        self.send_header("Content-Type", "text/plain")
+        self.send_header("Content-Type", content_type)
+        self.send_header("X-Pilot", "fixture")
         self.send_header("Content-Length", str(len(body)))
         self.end_headers()
         try:
