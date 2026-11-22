@@ -8,10 +8,10 @@ before sharing a binary with the manager or any developer. Public GitHub publica
 | Internal Windows acceptance | Open | Tester and date, Windows version, 100%/150% results, exact RC2 hash and outcomes for the remaining rows. Attach any exception and decision. |
 | Artwork rights | Unapproved | Owner name, date, basis of rights, and permission for the exact artwork in official Windows pilot binaries and matching source. Use the statement below. |
 | OpenJFX and Temurin corresponding source | Unapproved | Reviewer, date, verified build and patch coverage, approved source-delivery method, and recipient-access test. |
-| Microsoft runtime redistribution | Unapproved | Reviewer, date, exact DLLs, grant or terms, REDIST coverage, and permitted delivery method. |
+| Microsoft runtime redistribution | Unapproved | Reviewer, date, exact DLLs in both the Temurin image and JavaFX JAR, grant, REDIST and SDK coverage, and permitted delivery method. |
 | Candidate identity | Hash verified, owner approval pending | Approve the full RC2 ZIP hash in the [manifest](PACKAGE-MANIFEST.md). Record any new candidate separately. |
 | Organizational permission and participants | Pending | Coordinating manager, written permission from the partner organization, authorized Windows x64 machines, and 3–5 named participants or approved tester IDs. |
-| Private delivery | Pending | Owner-controlled location, named access list, expiration or removal date, and equally accessible approved source files. |
+| Private delivery | Pending | Owner-controlled location, named access list, expiration or removal date, unapproved-account access test, and equally accessible approved source files. |
 | Feedback and support | Pending | Private intake channel, Mirakinetix primary and backup contact, working hours, response target and P0 escalation route. |
 | Authorization to start | Pending | Owner signature, date, exact ZIP hash, approved sharing method, pilot dates, and explicit go decision. |
 

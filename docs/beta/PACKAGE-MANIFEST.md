@@ -9,6 +9,7 @@
 | SHA-256 | `aff15af34c5b6e5ffb443e9a06f8b5bb0f4b1326a32600b8c7f13095816e1825` |
 | Size and inventory | 59,152,029 bytes, 215 archived files |
 | Private handoff | `%LOCALAPPDATA%\Mirakinetix\Callsmith-Private-Beta\v1.0.0-beta.1-preparation` |
+| Prepared delivery name | `delivery/Callsmith-1.0.0-beta.1-windows-x64.zip`, a verified byte-identical copy of RC2 |
 | Application version | `1.0.0` |
 | Proposed pilot label | `v1.0.0-beta.1` after approval |
 | Verified main baseline | `f82a0a5f015f32375d60861f8e278cf77776e8e4`. Its tree matches the source commit below. |
@@ -22,8 +23,9 @@ RC2 is a portable Windows application image. It includes the Java runtime.
 Release notes for the pilot cover saved collections, protected environment
 variables, response assertions, sequential collection runs, import/export,
 and the RUN-01 fix that serializes Send and Run. The pilot evaluates these
-workflows with non-production APIs. The private handoff uses a byte-identical
-copy of RC2 with the original filename. [Release notes](RELEASE-NOTES.md) [Known limitations](KNOWN-LIMITATIONS.md)
+workflows with non-production APIs. The handoff retains the original RC2
+filename for evidence and a byte-identical copy under the beta delivery
+name. [Release notes](RELEASE-NOTES.md) · [Known limitations](KNOWN-LIMITATIONS.md)
 
 After the [owner decision](OWNER-CHECKLIST.md) records
 all approvals, use one company-approved, access-controlled location for
@@ -56,11 +58,18 @@ distribution gate remains blocked. [Artwork inventory](ARTWORK-INVENTORY.sha256)
 Maven and the Windows application image use numeric `1.0.0`. The packager
 passes the same numeric version to `jpackage`. About currently shows the
 product name and no version. For RC2, identify the beta on the manifest,
-release notes, and download label. An eventual approved asset named
-`Callsmith-1.0.0-beta.1-windows-x64.zip` may use the same bytes. If so,
-record that it is RC2 under a delivery name and use the same SHA-256.
+release notes, and download label. The staged delivery filename
+`Callsmith-1.0.0-beta.1-windows-x64.zip` uses the same SHA-256 as the
+original RC2.
 
 For a future build where About needs the beta identifier, populate it from
 explicit build metadata through a separate PR. Keep the numeric Windows
 version until an upgrade scheme is approved. Rebuild and record a new
 hash for any changed image.
+
+If the owner separately approves a public release, the proposed tag is
+`v1.0.0-beta.1` on the product tree matching the verified RC2 build
+(`f82a0a5f015f32375d60861f8e278cf77776e8e4`). The planned assets are the
+named Windows x64 ZIP, its SHA-256 manifest, and the approved complete
+corresponding-source materials with notices. Use the proposed release
+notes and verify public source access before publication.

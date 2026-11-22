@@ -1,8 +1,9 @@
 # Callsmith v1.0.0-beta.1
 
 **Proposed closed Windows x64 beta.** These notes describe application image
-RC2, which reports version `1.0.0` in Windows metadata. The release label is
-reserved for a future approved release. Use fictional data and local or
+RC2, which reports version `1.0.0` in Windows metadata. The prepared filename
+`Callsmith-1.0.0-beta.1-windows-x64.zip` is a byte-identical copy of RC2.
+Use fictional data and local or
 approved non-production APIs during the evaluation.
 
 ## Changes included

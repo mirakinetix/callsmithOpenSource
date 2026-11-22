@@ -24,10 +24,10 @@ them. Company-specific reports stay in the private channel.
 | Screenshot or sanitized log, if available | |
 | Suggested improvement | |
 
-**P0 — Critical.** Security or data integrity problem.
-**P1 — Major.** A core workflow fails.
-**P2 — Minor.** A defect or usability problem with a workaround.
-**P3 — Enhancement.** A feature or improvement suggestion.
+- **P0 — Critical.** Security or data integrity problem.
+- **P1 — Major.** A core workflow fails.
+- **P2 — Minor.** A defect or usability problem with a workaround.
+- **P3 — Enhancement.** A feature or improvement suggestion.
 
 For routine issues, submit one report per reproducible problem and include the
 scenario ID. The manager or pilot contact records the issue ID, checks for

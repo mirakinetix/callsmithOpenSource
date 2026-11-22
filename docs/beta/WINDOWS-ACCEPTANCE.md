@@ -3,15 +3,16 @@
 **22 November 2026** · Windows 11 x64 build 26300 · disposable profiles
 ZIP SHA-256 `aff15af34c5b6e5ffb443e9a06f8b5bb0f4b1326a32600b8c7f13095816e1825`.
 
-The current checks and retained observations below used the same RC2 bytes.
-The fixture bound to `127.0.0.1:8765` and used fictional data. Two clean
-shutdowns during release preparation produced zero stderr bytes.
+The final checks and retained observations below used the same RC2 bytes.
+The fixture bound to `127.0.0.1:8765` and used fictional data. Both final
+launches closed normally with zero stderr bytes.
 
 | Check | Result | Evidence |
 | --- | --- | --- |
 | Startup and normal shutdown | PASS | Fresh extracted image opened, initialized the new SQLite workspace and closed normally. The same profile also reopened and closed normally. |
 | Create a collection and start a new request | PASS | Earlier RC2 session created a collection. This session opened a new GET draft and entered a loopback URL. |
-| Save a brand-new request and Save As | BLOCKED | The Save destination opened, then the JavaFX name field could not accept desktop input. The full new-save and Save As workflows require owner checks. |
+| Save a brand-new named request | BLOCKED | The Save destination opened, then the JavaFX name field did not accept input through the available desktop controls. Repeated attempts were stopped. |
+| Save As and reopen the copy after restart | NOT TESTED | The naming step remains for an owner test. An existing edited request and its assertion did persist after restart. |
 | Edit and save an existing request | PASS | Changed the imported Health URL to `/health?edited=1`, saved through the app and reopened it after restart. A read-only SQLite check confirmed the stored URL. |
 | GET and POST execution | PASS | Reopened GET returned 200 and `health-ok`. A saved JSON POST with `Content-Type: application/json` reached the fixture and returned 200. The fixture validated the raw JSON body. |
 | HTTP timeout | PASS | A one-second setting stopped a single POST to `/slow`. The app displayed **The request timed out** and restored Send. The fixture counted one POST. |
@@ -22,16 +23,19 @@ shutdowns during release preparation produced zero stderr bytes.
 | Send Options authentication helpers | NOT TESTED | The saved-header check verified dispatch. Basic, Bearer and API-key helper configuration remain manual. |
 | Protected Secret Storage | NOT TESTED | Setup, wrong and correct passphrase, lock/unlock, locked dispatch prevention, and restart lock need owner testing in RC2. |
 | Response assertion evaluation | PASS | Earlier RC2 session evaluated seeded status, header and JSON assertions. All three passed. |
-| Assert and save rules from the editor | NOT TESTED | The seeded assertion test verified evaluation. Owner should create a new rule and verify persistence after restart. |
+| Assert and save rules from the editor | PASS | Added and saved **Status equals 200** on a disposable request using the packaged editor. It passed before and after restart, and a read-only SQLite check confirmed the stored rule. |
 | Sequential collection runner | PASS | Current RC2 runner finished four requests with four passes. Earlier RC2 session also verified order and retained completed checks after cancellation. |
 | RUN-01 concurrency | PASS | Earlier RC2 session observed the in-progress explanation when Run was clicked during Send. Fixture counts showed zero extra POSTs. Existing automated tests cover the reverse direction and repeated clicks. |
 | Postman import and export | PASS | Earlier RC2 session exported and re-imported a two-request collection through the native pickers. Current RC2 imported and ran another Postman v2.1 fixture. |
 | Legacy Insomnia import | PASS | RC2 imported the generated legacy JSON and displayed its saved Health request. |
 | OpenAPI import | PASS | RC2 imported the JSON fixture. Disposable SQLite stored the three expected URLs using document, path and operation server precedence. |
 | Safe export overwrite | PASS | Earlier RC2 session reached the app's own replacement prompt, declined and verified the existing export SHA-256 stayed unchanged. |
-| Approved export replacement and response overwrite refusal | NOT TESTED | The release-owner test must verify both existing-file paths on local NTFS. |
-| Restart persistence | PASS | The same temporary profile displayed the imported collections and reopened the edited Health request. GET succeeded after restart. |
-| Windows taskbar icon and scaling at 100% and 150% | NOT TESTED | The app's window icon was visible. Check the taskbar and dialog layout at both scales on an approved Windows test machine. |
+| Approved collection export replacement | PASS | Confirmed the native prompt and Callsmith's separate prompt on a synthetic file. The app reported success, and the file parsed as the expected collection and GET request. |
+| Native response-file overwrite refusal | PASS | Accepted the native prompt for a disposable file. Callsmith asked for a new filename and the existing file's SHA-256 stayed unchanged. |
+| Restart persistence | PASS | Collections, an edited existing request, and the newly saved assertion reopened in the disposable profiles. GET and its rule passed after restart. |
+| Windows taskbar icon at 100% | NOT TESTED | The window icon was visible. Tray and taskbar appearance were not checked at a known scale. |
+| Windows taskbar icon at 150% | NOT TESTED | Requires a Windows test machine at 150% scale. |
+| Dialog positioning at both scales | NOT TESTED | Verify all controls remain reachable with native dialogs at 100% and 150%. |
 
 ## Remaining owner checks
 
@@ -39,14 +43,12 @@ Use the [PowerShell launch and fixture instructions](../windows-beta-acceptance.
 Record the candidate SHA-256, Windows build and the result for each row.
 
 1. Save a new named request, use Save As, and verify both survive restart.
-   Create and save an assertion from the editor, then reopen it.
 2. Exercise Basic, Bearer and API-key helpers. Set up Secret Storage with a
    fictional passphrase, lock it, verify zero dispatches for a protected
    request, reject a wrong passphrase, unlock with the correct one, and
    verify the next launch starts locked.
 3. Cancel the native upload picker once. Reopen it, choose the sample file,
-   and confirm HTTP 200. Verify deliberate export replacement and refusal
-   to overwrite a saved response file.
+   and confirm HTTP 200.
 4. Check the window layout, native dialogs and taskbar icon at 100% and 150%.
 
 The build and package checks carry forward for the identical ZIP.
