@@ -84,6 +84,60 @@ public final class CollectionWorkspaceService {
         );
     }
 
+    public SavedRequest saveRequest(SavedRequest request) {
+        validateDestination(request.collectionId(), request.folderId());
+        return savedRequestRepository.save(request);
+    }
+
+    public void deleteRequest(String id) {
+        savedRequestRepository.deleteById(id);
+    }
+
+    public CollectionFolder createFolder(String collectionId, String parentId, String name) {
+        validateDestination(collectionId, parentId);
+        if (name == null || name.isBlank()) {
+            throw new IllegalArgumentException("A folder name is required");
+        }
+        Instant now = Instant.now();
+        return folderRepository.save(new CollectionFolder(
+                java.util.UUID.randomUUID().toString(), collectionId, parentId,
+                name.trim(), 0, now, now));
+    }
+
+    public void renameFolder(String id, String name) {
+        CollectionFolder folder = requireFolder(id);
+        if (name == null || name.isBlank()) {
+            throw new IllegalArgumentException("A folder name is required");
+        }
+        folderRepository.save(new CollectionFolder(folder.id(), folder.collectionId(),
+                folder.parentFolderId(), name.trim(), folder.sortOrder(), folder.createdAt(), Instant.now()));
+    }
+
+    public void deleteEmptyFolder(String id) {
+        CollectionFolder folder = requireFolder(id);
+        boolean hasChildren = folderRepository.findByCollectionId(folder.collectionId()).stream()
+                .anyMatch(child -> id.equals(child.parentFolderId()));
+        if (hasChildren || !savedRequestRepository.findByFolderId(id).isEmpty()) {
+            throw new IllegalArgumentException("Move the folder's contents before deleting it");
+        }
+        folderRepository.deleteById(id);
+    }
+
+    private CollectionFolder requireFolder(String id) {
+        return folderRepository.findById(id).orElseThrow(
+                () -> new IllegalArgumentException("This folder no longer exists"));
+    }
+
+    private void validateDestination(String collectionId, String folderId) {
+        if (collectionRepository.findById(collectionId).isEmpty()) {
+            throw new IllegalArgumentException("The destination collection no longer exists");
+        }
+        if (folderId != null && folderRepository.findById(folderId)
+                .filter(folder -> folder.collectionId().equals(collectionId)).isEmpty()) {
+            throw new IllegalArgumentException("The destination folder is not in this collection");
+        }
+    }
+
     public Optional<SavedRequest> findSavedRequest(
             String requestId
     ) {
@@ -167,5 +221,19 @@ public final class CollectionWorkspaceService {
             Map<String, List<CollectionFolder>> foldersByParent,
             Map<String, List<SavedRequest>> requestsByFolder
     ) {
+        public List<Child> orderedChildren(String parentKey) {
+            var children = new ArrayList<Child>();
+            requestsByFolder.getOrDefault(parentKey, List.of())
+                    .forEach(request -> children.add(new Child(null, request)));
+            foldersByParent.getOrDefault(parentKey, List.of())
+                    .forEach(folder -> children.add(new Child(folder, null)));
+            // Stable sort preserves the repository order for legacy rows that share an index.
+            children.sort(java.util.Comparator.comparingInt(Child::sortOrder));
+            return List.copyOf(children);
+        }
+    }
+
+    public record Child(CollectionFolder folder, SavedRequest request) {
+        private int sortOrder() { return folder == null ? request.sortOrder() : folder.sortOrder(); }
     }
 }

@@ -24,5 +24,8 @@ public interface EnvironmentVariableRepository {
             String name
     );
 
+    /** Returns names and display data; secret values are omitted. */
+    List<EnvironmentVariable> findSummariesByEnvironmentId(String environmentId);
+
     void deleteById(String id);
 }

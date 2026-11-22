@@ -1,9 +1,11 @@
 package com.mirakinetix.callsmith.ui.environment;
 
 import com.mirakinetix.callsmith.application.environment.EnvironmentService;
+import com.mirakinetix.callsmith.application.environment.SecretStorage;
 import com.mirakinetix.callsmith.application.environment.EnvironmentVariableService;
 import com.mirakinetix.callsmith.domain.environment.Environment;
 import com.mirakinetix.callsmith.domain.environment.EnvironmentVariable;
+import com.mirakinetix.callsmith.ui.CallsmithWindowIcons;
 import com.mirakinetix.callsmith.ui.Icon;
 import com.mirakinetix.callsmith.ui.IconView;
 
@@ -23,7 +25,6 @@ import javafx.scene.control.ListView;
 import javafx.scene.control.PasswordField;
 import javafx.scene.control.SelectionMode;
 import javafx.scene.control.Separator;
-import javafx.scene.control.TableCell;
 import javafx.scene.control.TableColumn;
 import javafx.scene.control.TableView;
 import javafx.scene.control.TextField;
@@ -49,6 +50,7 @@ public final class EnvironmentManager {
     private final EnvironmentService environmentService;
     private final EnvironmentVariableService variableService;
     private final Runnable onChanged;
+    private final SecretStorage secretStorage;
 
     private final ListView<Environment> environmentList =
             new ListView<>();
@@ -61,8 +63,10 @@ public final class EnvironmentManager {
     public EnvironmentManager(
             EnvironmentService environmentService,
             EnvironmentVariableService variableService,
+            SecretStorage secretStorage,
             Runnable onChanged
     ) {
+        this.secretStorage = secretStorage;
         if (environmentService == null) {
             throw new IllegalArgumentException(
                     "Environment service is required"
@@ -105,6 +109,7 @@ public final class EnvironmentManager {
         );
 
         stage.setResizable(true);
+        CallsmithWindowIcons.install(stage);
 
         BorderPane root =
                 buildView();
@@ -190,10 +195,14 @@ public final class EnvironmentManager {
                         description
                 );
 
-        HBox header =
-                new HBox(
-                        text
-                );
+        Button protection = new Button("Secret Storage", new IconView(
+                secretStorage.isUnlocked() ? Icon.UNLOCK : Icon.LOCK));
+        protection.setOnAction(event -> {
+            new SecretStorageDialog(secretStorage).show(stage);
+            protection.setGraphic(new IconView(secretStorage.isUnlocked() ? Icon.UNLOCK : Icon.LOCK));
+        });
+
+        HBox header = new HBox(16, text, protection);
 
         header.setAlignment(
                 Pos.CENTER_LEFT
@@ -365,14 +374,10 @@ public final class EnvironmentManager {
         valueColumn.setCellValueFactory(
                 cellData ->
                         new ReadOnlyObjectWrapper<>(
-                                cellData.getValue().value()
+                                cellData.getValue().secret() ? "********" : cellData.getValue().value()
                         )
         );
 
-        valueColumn.setCellFactory(
-                ignored ->
-                        new EnvironmentVariableValueCell()
-        );
 
         TableColumn<
                 EnvironmentVariable,
@@ -523,14 +528,13 @@ public final class EnvironmentManager {
             return;
         }
 
-        variableTable.setItems(
-                FXCollections.observableArrayList(
-                        variableService
-                                .findByEnvironmentId(
-                                        environment.id()
-                                )
-                )
-        );
+        try {
+            variableTable.setItems(FXCollections.observableArrayList(
+                    variableService.findSummariesByEnvironmentId(environment.id())));
+        } catch (IllegalStateException exception) {
+            variableTable.getItems().clear();
+            showError(exception.getMessage());
+        }
     }
 
     private void createEnvironment() {
@@ -877,10 +881,13 @@ public final class EnvironmentManager {
             return;
         }
 
-        showVariableDialog(
-                environment,
-                variable
-        );
+        try {
+            variableService.findById(variable.id()).ifPresentOrElse(
+                    existing -> showVariableDialog(environment, existing),
+                    () -> showError("This variable no longer exists."));
+        } catch (IllegalStateException exception) {
+            showError(exception.getMessage());
+        }
     }
 
     private void deleteVariable() {
@@ -964,13 +971,12 @@ public final class EnvironmentManager {
                         ? ""
                         : existing.value();
 
-        normalValueField.setText(
-                initialValue
-        );
-
-        secretValueField.setText(
-                initialValue
-        );
+        boolean protectedVariable = existing != null && existing.secret();
+        if (protectedVariable) {
+            secretValueField.setText(initialValue);
+        } else {
+            normalValueField.setText(initialValue);
+        }
 
         CheckBox secretCheckBox =
                 new CheckBox(
@@ -981,6 +987,12 @@ public final class EnvironmentManager {
                 existing != null
                         && existing.secret()
         );
+
+        secretCheckBox.setDisable(protectedVariable);
+        if (protectedVariable) {
+            secretCheckBox.setTooltip(new javafx.scene.control.Tooltip(
+                    "To use a non-secret value, create a separate variable."));
+        }
 
         StackPane valueContainer =
                 new StackPane(
@@ -1059,13 +1071,13 @@ public final class EnvironmentManager {
                                     : secretValueField
                                             .getText();
 
-                    normalValueField.setText(
-                            currentValue
-                    );
-
-                    secretValueField.setText(
-                            currentValue
-                    );
+                    if (secret) {
+                        secretValueField.setText(currentValue);
+                        normalValueField.clear();
+                    } else {
+                        normalValueField.setText(currentValue);
+                        secretValueField.clear();
+                    }
 
                     normalValueField.setVisible(
                             !secret
@@ -1128,11 +1140,15 @@ public final class EnvironmentManager {
                                     .getText()
                                     .trim();
 
-                    if (isDuplicateVariableName(
-                            environment.id(),
-                            name,
-                            existing
-                    )) {
+                    boolean duplicate;
+                    try {
+                        duplicate = isDuplicateVariableName(environment.id(), name, existing);
+                    } catch (IllegalStateException exception) {
+                        showError(exception.getMessage());
+                        event.consume();
+                        return;
+                    }
+                    if (duplicate) {
                         showError(
                                 "A variable with the name \""
                                         + name
@@ -1215,6 +1231,7 @@ public final class EnvironmentManager {
                             }
                         }
                 );
+        secretValueField.clear();
     }
 
     private boolean isDuplicateVariableName(
@@ -1223,16 +1240,15 @@ public final class EnvironmentManager {
             EnvironmentVariable existing
     ) {
         return variableService
-                .findByName(
-                        environmentId,
-                        name
-                )
+                .findSummariesByEnvironmentId(environmentId)
+                .stream()
+                .filter(variable -> variable.name().equals(name))
                 .filter(
                         variable ->
                                 existing == null
                                         || !variable.id().equals(existing.id())
                 )
-                .isPresent();
+                .findAny().isPresent();
     }
 
     private GridPane createFormGrid() {
@@ -1300,6 +1316,9 @@ public final class EnvironmentManager {
     private void applyBrandStyles(
             Dialog<?> dialog
     ) {
+        if (stage != null && dialog.getOwner() == null) {
+            dialog.initOwner(stage);
+        }
         dialog.getDialogPane()
                 .getStylesheets()
                 .add(
@@ -1389,48 +1408,6 @@ public final class EnvironmentManager {
             );
 
             setText(null);
-        }
-    }
-
-    private static final class EnvironmentVariableValueCell
-            extends TableCell<
-                    EnvironmentVariable,
-                    String> {
-
-        @Override
-        protected void updateItem(
-                String value,
-                boolean empty
-        ) {
-            super.updateItem(
-                    value,
-                    empty
-            );
-
-            if (empty || value == null) {
-                setText(null);
-                setGraphic(null);
-                return;
-            }
-
-            EnvironmentVariable variable =
-                    getTableView()
-                            .getItems()
-                            .get(
-                                    getIndex()
-                            );
-
-            if (variable.secret()) {
-                setText(
-                        "********"
-                );
-            } else {
-                setText(
-                        value
-                );
-            }
-
-            setGraphic(null);
         }
     }
 }

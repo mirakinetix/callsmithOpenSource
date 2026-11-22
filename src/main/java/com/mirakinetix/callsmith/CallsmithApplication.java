@@ -8,7 +8,11 @@ import com.mirakinetix.callsmith.application.collection.importation.CollectionIm
 import com.mirakinetix.callsmith.application.environment.EnvironmentService;
 import com.mirakinetix.callsmith.application.environment.EnvironmentVariableResolver;
 import com.mirakinetix.callsmith.application.environment.EnvironmentVariableService;
+import com.mirakinetix.callsmith.application.http.ExecutionCoordinator;
 import com.mirakinetix.callsmith.application.http.HttpRequestService;
+import com.mirakinetix.callsmith.application.testing.AssertionEvaluator;
+import com.mirakinetix.callsmith.application.testing.CollectionRunner;
+import com.mirakinetix.callsmith.infrastructure.persistence.sqlite.SqliteAssertionRepository;
 import com.mirakinetix.callsmith.infrastructure.collection.PostmanCollectionExporter;
 import com.mirakinetix.callsmith.infrastructure.collection.importation.InsomniaCollectionImporter;
 import com.mirakinetix.callsmith.infrastructure.collection.importation.OpenApiImporter;
@@ -25,24 +29,26 @@ import com.mirakinetix.callsmith.infrastructure.persistence.sqlite.SqliteDatabas
 import com.mirakinetix.callsmith.infrastructure.persistence.sqlite.SqliteEnvironmentRepository;
 import com.mirakinetix.callsmith.infrastructure.persistence.sqlite.SqliteEnvironmentVariableRepository;
 import com.mirakinetix.callsmith.infrastructure.persistence.sqlite.SqliteSavedRequestRepository;
+import com.mirakinetix.callsmith.infrastructure.persistence.sqlite.SqliteSecretStorage;
 import com.mirakinetix.callsmith.ui.MainWindow;
 import javafx.application.Application;
 import javafx.stage.Stage;
 
 import java.nio.file.Path;
 import java.util.List;
-import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
 public class CallsmithApplication extends Application {
 
-    private ExecutorService requestExecutor;
+    private ExecutionCoordinator execution;
+    private SqliteSecretStorage secretStorage;
 
     @Override
     public void start(Stage stage) {
-        Path databasePath =
-                ApplicationDataDirectory.resolve()
-                        .resolve("callsmith.db");
+        startWorkspace(stage, ApplicationDataDirectory.resolve().resolve("callsmith.db"));
+    }
+
+    void startWorkspace(Stage stage, Path databasePath) {
 
         SqliteDatabase sqliteDatabase =
                 new SqliteDatabase(databasePath);
@@ -60,10 +66,12 @@ public class CallsmithApplication extends Application {
                         sqliteDatabase
                 );
 
+        secretStorage = new SqliteSecretStorage(sqliteDatabase);
+
         SqliteEnvironmentVariableRepository
                 environmentVariableRepository =
                 new SqliteEnvironmentVariableRepository(
-                        sqliteDatabase
+                        sqliteDatabase, secretStorage
                 );
 
         EnvironmentService environmentService =
@@ -161,8 +169,12 @@ public class CallsmithApplication extends Application {
                         variableResolver
                 );
 
-        requestExecutor =
-                Executors.newVirtualThreadPerTaskExecutor();
+        execution = new ExecutionCoordinator(Executors.newVirtualThreadPerTaskExecutor());
+
+        var assertionRepository = new SqliteAssertionRepository(sqliteDatabase, objectMapper);
+        var assertionEvaluator = new AssertionEvaluator(variableResolver);
+        var runner = new CollectionRunner(collectionWorkspaceService, assertionRepository,
+                httpRequestService, assertionEvaluator);
 
         MainWindow mainWindow =
                 new MainWindow(
@@ -173,7 +185,11 @@ public class CallsmithApplication extends Application {
                         collectionExportService,
                         collectionImportService,
                         collectionImportPersistenceService,
-                        requestExecutor
+                        secretStorage,
+                        assertionRepository,
+                        assertionEvaluator,
+                        runner,
+                        execution
                 );
 
         mainWindow.show(stage);
@@ -181,8 +197,11 @@ public class CallsmithApplication extends Application {
 
     @Override
     public void stop() {
-        if (requestExecutor != null) {
-            requestExecutor.close();
+        if (execution != null) {
+            execution.close();
+        }
+        if (secretStorage != null) {
+            secretStorage.lock();
         }
     }
 

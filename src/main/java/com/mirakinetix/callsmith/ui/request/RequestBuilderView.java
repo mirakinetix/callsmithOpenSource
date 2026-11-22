@@ -2,10 +2,16 @@ package com.mirakinetix.callsmith.ui.request;
 
 import com.mirakinetix.callsmith.application.environment.EnvironmentService;
 import com.mirakinetix.callsmith.application.environment.EnvironmentVariableService;
+import com.mirakinetix.callsmith.application.http.ExecutionCoordinator;
 import com.mirakinetix.callsmith.application.http.HttpRequestService;
 import com.mirakinetix.callsmith.domain.environment.Environment;
 import com.mirakinetix.callsmith.domain.environment.EnvironmentVariable;
 import com.mirakinetix.callsmith.domain.http.HttpRequest;
+import com.mirakinetix.callsmith.application.testing.AssertionRepository;
+import com.mirakinetix.callsmith.application.testing.AssertionEvaluator;
+import com.mirakinetix.callsmith.ui.testing.AssertionDialog;
+import com.mirakinetix.callsmith.domain.http.RequestOptions;
+import com.mirakinetix.callsmith.ui.response.ResponsePreview;
 import com.mirakinetix.callsmith.domain.http.HttpResponse;
 import com.mirakinetix.callsmith.domain.request.SavedRequest;
 import com.mirakinetix.callsmith.ui.Icon;
@@ -28,14 +34,17 @@ import javafx.scene.layout.VBox;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
-import java.util.concurrent.ExecutorService;
+import java.util.concurrent.RejectedExecutionException;
+import java.util.concurrent.atomic.AtomicReference;
+
+import static com.mirakinetix.callsmith.application.http.ExecutionCoordinator.Operation.SEND;
 
 public final class RequestBuilderView extends BorderPane {
 
     private final HttpRequestService httpRequestService;
     private final EnvironmentService environmentService;
     private final EnvironmentVariableService environmentVariableService;
-    private final ExecutorService requestExecutor;
+    private final ExecutionCoordinator execution;
 
     private final ComboBox<String> methodSelector =
             new ComboBox<>();
@@ -65,6 +74,121 @@ public final class RequestBuilderView extends BorderPane {
             );
 
     private Runnable manageEnvironmentsAction;
+    private final VBox savedRequestActions = new VBox(6);
+    private final Label requestName = new Label();
+    private SavedRequest savedRequest;
+    private Draft cleanDraft;
+    private boolean showCancellation;
+    private long responseGeneration;
+    private final Button cancelSend = new Button("Cancel", new IconView(Icon.CANCEL));
+    private final Button assertionButton = new Button("Assertions", new IconView(Icon.CHECK));
+    private AssertionRepository assertions;
+    private AssertionEvaluator assertionEvaluator;
+
+    public void configureAssertions(AssertionRepository repository, AssertionEvaluator evaluator) {
+        assertions = repository;
+        assertionEvaluator = evaluator;
+        assertionButton.setOnAction(event -> {
+            if (savedRequest != null) AssertionDialog.show(getScene().getWindow(), savedRequest.id(), assertions);
+        });
+        assertionButton.setDisable(savedRequest == null);
+    }
+
+    private final Button sendOptionsButton = new Button("Send Options...", new IconView(Icon.SETTINGS));
+    private RequestOptions sendOptions = RequestOptions.DEFAULT;
+
+    private void resetSendOptions() {
+        sendOptions = RequestOptions.DEFAULT;
+        sendOptionsButton.setText("Send Options...");
+    }
+
+    public void cancelActiveRequest() {
+        cancelRequest();
+    }
+
+    private void cancelRequest() {
+        responseGeneration++;
+        showCancellation = false;
+        if (execution.cancel(SEND)) {
+            sendButton.setText("Cancelling...");
+        }
+        cancelSend.setDisable(true);
+        responseInspector.clear();
+    }
+
+    public record Draft(String method, String url, Map<String, String> headers,
+                        Map<String, String> query, String body) {}
+
+    public Draft draft() {
+        return new Draft(methodSelector.getValue(), urlField.getText(),
+                headersEditor.getValues(), queryParametersEditor.getValues(), requestBody.getText());
+    }
+
+    public SavedRequest savedRequest() {
+        return savedRequest;
+    }
+
+    public void markSaved(SavedRequest request) {
+        savedRequest = request;
+        assertionButton.setDisable(request == null || assertions == null);
+        cleanDraft = draft();
+        requestName.setText(request == null ? "Unsaved request" : request.name());
+    }
+
+    public void updateSavedMetadata(SavedRequest request) {
+        savedRequest = request;
+        requestName.setText(request.name());
+    }
+
+    public boolean allowDiscard() {
+        if (draft().equals(cleanDraft) && sendOptions.equals(RequestOptions.DEFAULT)) {
+            return true;
+        }
+        var dialog = new javafx.scene.control.Alert(
+                javafx.scene.control.Alert.AlertType.CONFIRMATION,
+                "Discard unsaved changes or temporary send options for this request?",
+                javafx.scene.control.ButtonType.YES, javafx.scene.control.ButtonType.CANCEL);
+        dialog.initOwner(getScene().getWindow());
+        dialog.getDialogPane().getStylesheets().addAll(getScene().getStylesheets());
+        return dialog.showAndWait().orElse(javafx.scene.control.ButtonType.CANCEL)
+                == javafx.scene.control.ButtonType.YES;
+    }
+
+    public void clearRequest() {
+        resetSendOptions();
+        methodSelector.setValue("GET");
+        urlField.clear();
+        headersEditor.setValues(Map.of());
+        queryParametersEditor.setValues(Map.of());
+        requestBody.clear();
+        cancelRequest();
+        markSaved(null);
+    }
+
+    public void setRequestActions(Runnable save, Runnable saveAs) {
+        cancelSend.setDisable(true);
+        cancelSend.setOnAction(event -> {
+            cancelRequest();
+            showCancellation = true;
+            responseInspector.displayValidationError("Cancelling...");
+        });
+        sendOptionsButton.setOnAction(event -> RequestOptionsDialog.show(
+                getScene().getWindow(), sendOptions).ifPresent(this::setSendOptions));
+        Button create = new Button("New Request", new IconView(Icon.NEW_REQUEST));
+        create.setOnAction(event -> {
+            if (allowDiscard()) {
+                clearRequest();
+            }
+        });
+        Button saveButton = new Button("Save", new IconView(Icon.SAVE));
+        saveButton.setOnAction(event -> save.run());
+        Button saveAsButton = new Button("Save As", new IconView(Icon.SAVE_AS));
+        saveAsButton.setOnAction(event -> saveAs.run());
+        var actions = new javafx.scene.layout.FlowPane(6, 4, create, saveButton, saveAsButton, sendOptionsButton);
+        if (assertions != null) actions.getChildren().add(assertionButton);
+        savedRequestActions.getChildren().setAll(requestName, actions);
+        markSaved(null);
+    }
 
     private final KeyValueEditor queryParametersEditor =
             new KeyValueEditor(
@@ -91,19 +215,31 @@ public final class RequestBuilderView extends BorderPane {
             HttpRequestService httpRequestService,
             EnvironmentService environmentService,
             EnvironmentVariableService environmentVariableService,
-            ExecutorService requestExecutor
+            ExecutionCoordinator execution
     ) {
         this.httpRequestService = httpRequestService;
         this.environmentService = environmentService;
         this.environmentVariableService = environmentVariableService;
-        this.requestExecutor = requestExecutor;
+        this.execution = execution;
 
         configureControls();
         loadEnvironments();
         buildLayout();
     }
 
+    void setSendOptions(RequestOptions options) {
+        sendOptions = options;
+        sendOptionsButton.setText(options.equals(RequestOptions.DEFAULT) ? "Send Options..." : "Send Options (set)...");
+    }
+
     private void configureControls() {
+        urlField.setId("request-url");
+        methodSelector.setId("request-method");
+        queryParametersEditor.setId("request-query");
+        headersEditor.setId("request-headers");
+        requestBody.setId("request-body");
+        sendButton.setId("request-send");
+        cancelSend.setId("request-cancel");
         methodSelector.getItems().addAll(
                 "GET",
                 "POST",
@@ -284,11 +420,13 @@ public final class RequestBuilderView extends BorderPane {
             return;
         }
 
-        List<EnvironmentVariable> variables =
-                environmentVariableService
-                        .findByEnvironmentId(
-                                environmentId
-                        );
+        List<EnvironmentVariable> variables;
+        try {
+            variables = environmentVariableService.findSummariesByEnvironmentId(environmentId);
+        } catch (IllegalStateException exception) {
+            variablesPanel.getChildren().add(new Label("Environment variables could not be read."));
+            return;
+        }
 
         if (variables.isEmpty()) {
             variablesPanel.getChildren().add(
@@ -366,7 +504,8 @@ public final class RequestBuilderView extends BorderPane {
                         8,
                         methodSelector,
                         urlField,
-                        sendButton
+                        sendButton,
+                        cancelSend
                 );
 
         HBox.setHgrow(
@@ -384,13 +523,14 @@ public final class RequestBuilderView extends BorderPane {
                 new VBox(
                         8,
                         requestContentTitle,
+                        savedRequestActions,
                         requestBar,
                         variablesPanel,
-                        new Label("Query Parameters"),
+                        new Label("Query Parameters", new IconView(Icon.QUERY)),
                         queryParametersEditor,
-                        new Label("Headers"),
+                        new Label("Headers", new IconView(Icon.HEADERS)),
                         headersEditor,
-                        new Label("Body"),
+                        new Label("Body", new IconView(Icon.BODY)),
                         requestBody
                 );
 
@@ -464,6 +604,7 @@ public final class RequestBuilderView extends BorderPane {
             );
         }
 
+        resetSendOptions();
         methodSelector.setValue(
                 request.method()
         );
@@ -486,7 +627,8 @@ public final class RequestBuilderView extends BorderPane {
                         : request.body()
         );
 
-        responseInspector.clear();
+        cancelRequest();
+        markSaved(request);
     }
 
     public void loadSavedRequest(
@@ -513,10 +655,6 @@ public final class RequestBuilderView extends BorderPane {
             return;
         }
 
-        sendButton.setDisable(true);
-
-        responseInspector.displaySending();
-
         Map<String, String> queryParameters =
                 queryParametersEditor.getValues();
 
@@ -531,53 +669,74 @@ public final class RequestBuilderView extends BorderPane {
                         queryParameters,
                         body.isEmpty()
                                 ? null
-                                : body
+                                : body,
+                        sendOptions
                 );
 
-        String environmentId =
-                getSelectedEnvironmentId();
+        String environmentId = getSelectedEnvironmentId();
+        String assertionRequestId = savedRequest == null ? null : savedRequest.id();
 
-        requestExecutor.submit(
-                () -> {
-                    try {
-                        HttpResponse response =
-                                httpRequestService.execute(
-                                        request,
-                                        environmentId
-                                );
-
-                        Platform.runLater(
-                                () -> {
-                                    responseInspector
-                                            .displayResponse(
-                                                    response
-                                            );
-
-                                    sendButton.setDisable(
-                                            false
-                                    );
-                                }
-                        );
-
-                    } catch (RuntimeException exception) {
-                        Platform.runLater(
-                                () -> {
-                                    responseInspector
-                                            .displayError(
-                                                    exception
-                                            );
-
-                                    sendButton.setDisable(
-                                            false
-                                    );
-                                }
-                        );
-                    }
-                }
-        );
+        long generation = responseGeneration + 1;
+        var result = new AtomicReference<Runnable>();
+        try {
+            boolean started = execution.tryStart(SEND,
+                    () -> result.set(executeInBackground(request, environmentId, assertionRequestId)),
+                    () -> Platform.runLater(() -> finishSend(generation, result.get())));
+            if (!started) return; // The modal collection dialog already shows its active run.
+        } catch (RejectedExecutionException exception) {
+            responseInspector.displayValidationError("Request execution is shutting down.");
+            return;
+        }
+        responseGeneration = generation;
+        sendButton.setDisable(true);
+        cancelSend.setDisable(false);
+        responseInspector.displaySending();
     }
 
-    private String getSelectedEnvironmentId() {
+    private Runnable executeInBackground(HttpRequest request, String environmentId, String assertionRequestId) {
+        try {
+            HttpResponse response = httpRequestService.execute(request, environmentId);
+            ResponsePreview preview = ResponsePreview.prepare(response);
+            String checks = assertionReport(assertionRequestId, response, environmentId);
+            return () -> {
+                responseInspector.displayResponse(response, preview);
+                responseInspector.displayAssertions(checks);
+            };
+        } catch (RuntimeException exception) {
+            String checks = assertionReport(assertionRequestId, null, environmentId);
+            return () -> {
+                responseInspector.displayError(exception);
+                responseInspector.displayAssertions(checks);
+            };
+        }
+    }
+
+    private void finishSend(long generation, Runnable displayResult) {
+        sendButton.setText("Send");
+        sendButton.setDisable(false);
+        cancelSend.setDisable(true);
+        if (showCancellation) {
+            showCancellation = false;
+            responseInspector.displayValidationError("Cancelled");
+        } else if (generation == responseGeneration && displayResult != null) {
+            displayResult.run();
+        }
+    }
+
+    private String assertionReport(String requestId, HttpResponse response, String environmentId) {
+        if (requestId == null || assertions == null) return "";
+        try {
+            var definitions = assertions.find(requestId);
+            var results = response == null ? assertionEvaluator.noResponse(definitions)
+                    : assertionEvaluator.evaluate(response, definitions, environmentId);
+            return results.stream()
+                    .map(AssertionEvaluator.Result::reportLine).collect(java.util.stream.Collectors.joining("\n"));
+        } catch (RuntimeException exception) {
+            return "FAIL — Saved assertions could not be evaluated.";
+        }
+    }
+
+    public String getSelectedEnvironmentId() {
         EnvironmentOption selected =
                 environmentSelector
                         .getSelectionModel()

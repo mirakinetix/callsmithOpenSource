@@ -8,6 +8,11 @@ public record ImportedRequest(
         String url,
         Map<String, String> headers,
         Map<String, String> queryParameters,
-        String body
+        String body,
+        Integer sortOrder
 ) {
+    public ImportedRequest(String name, String method, String url, Map<String, String> headers,
+                           Map<String, String> queryParameters, String body) {
+        this(name, method, url, headers, queryParameters, body, null);
+    }
 }

@@ -48,6 +48,10 @@ public final class EnvironmentVariableService {
         );
     }
 
+    public List<EnvironmentVariable> findSummariesByEnvironmentId(String environmentId) {
+        return variableRepository.findSummariesByEnvironmentId(environmentId);
+    }
+
     public void deleteById(
             String id
     ) {

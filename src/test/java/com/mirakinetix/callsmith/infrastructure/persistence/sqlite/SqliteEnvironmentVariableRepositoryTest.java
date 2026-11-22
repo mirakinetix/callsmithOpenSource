@@ -17,6 +17,7 @@ import static org.junit.jupiter.api.Assertions.*;
 class SqliteEnvironmentVariableRepositoryTest {
 
     private SqliteDatabase database;
+    private SqliteSecretStorage secrets;
     private SqliteEnvironmentVariableRepository repository;
 
     @BeforeEach
@@ -38,9 +39,10 @@ class SqliteEnvironmentVariableRepositoryTest {
 
         callsmithDatabase.initialize();
 
+        secrets = new SqliteSecretStorage(database);
         repository =
                 new SqliteEnvironmentVariableRepository(
-                        database
+                        database, secrets
                 );
     }
 
@@ -76,6 +78,7 @@ class SqliteEnvironmentVariableRepositoryTest {
 
     @Test
     void shouldUpdateExistingVariable() {
+        secrets.initialize("fixture workspace passphrase".toCharArray());
         createEnvironment("environment-1");
 
         Instant createdAt =
@@ -236,6 +239,7 @@ class SqliteEnvironmentVariableRepositoryTest {
 
     @Test
     void shouldPersistSecretFlag() {
+        secrets.initialize("fixture workspace passphrase".toCharArray());
         createEnvironment("environment-1");
 
         EnvironmentVariable secret =

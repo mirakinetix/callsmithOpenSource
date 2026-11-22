@@ -1,196 +1,182 @@
 package com.mirakinetix.callsmith.application.collection.importation;
 
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.mirakinetix.callsmith.domain.collection.importation.ImportedCollection;
+import com.mirakinetix.callsmith.infrastructure.collection.importation.InsomniaCollectionImporter;
+import com.mirakinetix.callsmith.infrastructure.collection.importation.OpenApiImporter;
+import com.mirakinetix.callsmith.infrastructure.collection.importation.PostmanCollectionImporter;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
 
+import java.io.IOException;
+import java.io.RandomAccessFile;
+import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
+import java.util.stream.Collectors;
+import java.util.stream.IntStream;
 
-import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertThrows;
-import static org.mockito.Mockito.mock;
-import static org.mockito.Mockito.verify;
-import static org.mockito.Mockito.when;
+import static org.junit.jupiter.api.Assertions.*;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.*;
 
 class CollectionImportServiceTest {
+    @TempDir Path directory;
+    private final ObjectMapper mapper = new ObjectMapper();
+
+    @Test
+    void rejectsOversizedInputBeforeProbingImporter() throws IOException {
+        Path file = directory.resolve("large.json");
+        try (var output = new RandomAccessFile(file.toFile(), "rw")) {
+            output.setLength(9L * 1024 * 1024);
+        }
+        var importer = mock(CollectionImporter.class);
+        var service = new CollectionImportService(List.of(importer));
+        var failure = assertThrows(IllegalArgumentException.class, () -> service.importCollection(file));
+        assertTrue(failure.getMessage().contains("8 MiB"));
+        verifyNoInteractions(importer);
+    }
 
     @Test
     void shouldRejectEmptyImporterList() {
-        IllegalArgumentException exception =
-                assertThrows(
-                        IllegalArgumentException.class,
-                        () -> new CollectionImportService(
-                                List.of()
-                        )
-                );
-
-        assertEquals(
-                "At least one collection importer is required",
-                exception.getMessage()
-        );
+        assertEquals("At least one collection importer is required",
+                assertThrows(IllegalArgumentException.class, () -> new CollectionImportService(List.of())).getMessage());
     }
 
     @Test
     void shouldRejectNullImporterList() {
-        IllegalArgumentException exception =
-                assertThrows(
-                        IllegalArgumentException.class,
-                        () -> new CollectionImportService(
-                                null
-                        )
-                );
-
-        assertEquals(
-                "At least one collection importer is required",
-                exception.getMessage()
-        );
+        assertEquals("At least one collection importer is required",
+                assertThrows(IllegalArgumentException.class, () -> new CollectionImportService(null)).getMessage());
     }
 
     @Test
     void shouldRejectNullFile() {
-        CollectionImporter importer =
-                mock(CollectionImporter.class);
-
-        CollectionImportService service =
-                new CollectionImportService(
-                        List.of(importer)
-                );
-
-        IllegalArgumentException exception =
-                assertThrows(
-                        IllegalArgumentException.class,
-                        () -> service.importCollection(null)
-                );
-
-        assertEquals(
-                "Import file is required",
-                exception.getMessage()
-        );
+        var service = new CollectionImportService(List.of(mock(CollectionImporter.class)));
+        assertEquals("Import file is required",
+                assertThrows(IllegalArgumentException.class, () -> service.importCollection(null)).getMessage());
     }
 
     @Test
-    void shouldRejectUnsupportedFormat() {
-        Path file =
-                Path.of("collection.json");
-
-        CollectionImporter importer =
-                mock(CollectionImporter.class);
-
-        when(importer.supports(file))
-                .thenReturn(false);
-
-        CollectionImportService service =
-                new CollectionImportService(
-                        List.of(importer)
-                );
-
-        IllegalArgumentException exception =
-                assertThrows(
-                        IllegalArgumentException.class,
-                        () -> service.importCollection(file)
-                );
-
-        assertEquals(
-                "Unsupported collection format: collection.json",
-                exception.getMessage()
-        );
-
-        verify(importer).supports(file);
+    void shouldRejectUnsupportedFormat() throws IOException {
+        var importer = mock(CollectionImporter.class);
+        var file = write("{}");
+        assertEquals("Unsupported collection format: collection.json", assertThrows(IllegalArgumentException.class,
+                () -> new CollectionImportService(List.of(importer)).importCollection(file)).getMessage());
+        verify(importer).supportsDocument(mapper.createObjectNode());
     }
 
     @Test
-    void shouldUseImporterThatSupportsFile() {
-        Path file =
-                Path.of("collection.json");
+    void shouldUseTheFirstSupportingImporter() throws IOException {
+        var unsupported = mock(CollectionImporter.class);
+        var supported = mock(CollectionImporter.class);
+        var unused = mock(CollectionImporter.class);
+        var document = mapper.createObjectNode().put("fixture", true);
+        var collection = new ImportedCollection("Fixture", List.of(), List.of());
+        when(supported.supportsDocument(document)).thenReturn(true);
+        when(supported.importDocument(document)).thenReturn(collection);
 
-        CollectionImporter unsupportedImporter =
-                mock(CollectionImporter.class);
-
-        CollectionImporter supportedImporter =
-                mock(CollectionImporter.class);
-
-        ImportedCollection importedCollection =
-                new ImportedCollection(
-                        "Imported Collection",
-                        List.of(),
-                        List.of()
-                );
-
-        when(unsupportedImporter.supports(file))
-                .thenReturn(false);
-
-        when(supportedImporter.supports(file))
-                .thenReturn(true);
-
-        when(supportedImporter.importCollection(file))
-                .thenReturn(importedCollection);
-
-        CollectionImportService service =
-                new CollectionImportService(
-                        List.of(
-                                unsupportedImporter,
-                                supportedImporter
-                        )
-                );
-
-        ImportedCollection result =
-                service.importCollection(file);
-
-        assertEquals(
-                importedCollection,
-                result
-        );
-
-        verify(unsupportedImporter).supports(file);
-        verify(supportedImporter).supports(file);
-        verify(supportedImporter)
-                .importCollection(file);
+        var service = new CollectionImportService(List.of(unsupported, supported, unused));
+        assertSame(collection, service.importCollection(write(document.toString())));
+        verify(unsupported).supportsDocument(document);
+        verify(unsupported, never()).importDocument(any(JsonNode.class));
+        verifyNoInteractions(unused);
     }
 
     @Test
-    void shouldUseFirstSupportingImporter() {
-        Path file =
-                Path.of("collection.json");
+    void shouldStopSearchingAfterFirstMatch() throws IOException {
+        var first = mock(CollectionImporter.class);
+        var second = mock(CollectionImporter.class);
+        var result = new ImportedCollection("First", List.of(), List.of());
+        when(first.supportsDocument(any())).thenReturn(true);
+        when(first.importDocument(any())).thenReturn(result);
+        assertSame(result, new CollectionImportService(List.of(first, second)).importCollection(write("{}")));
+        verifyNoInteractions(second);
+    }
 
-        CollectionImporter firstImporter =
-                mock(CollectionImporter.class);
+    @Test
+    void acceptsLargeValidCollectionAndRejectsTooManyResources() throws IOException {
+        var service = service();
+        String item = "{\"name\":\"Fixture\",\"request\":{\"method\":\"POST\",\"url\":\"http://127.0.0.1/demo\"}}";
+        String description = "a".repeat(4 * 1024 * 1024);
+        var large = service.importCollection(write(postman(item, description)));
+        assertEquals(1, large.requests().size());
+        String oversized = IntStream.rangeClosed(0, CollectionImportDocument.MAX_RESOURCES)
+                .mapToObj(index -> item).collect(Collectors.joining(","));
+        assertTrue(assertThrows(IllegalArgumentException.class,
+                () -> service.importCollection(write(postman(oversized, "")))).getMessage().contains("5,000"));
+    }
 
-        CollectionImporter secondImporter =
-                mock(CollectionImporter.class);
+    @Test
+    void rejectsMalformedJsonAndExcessiveJsonOrFolderDepth() throws IOException {
+        var service = service();
+        for (String broken : List.of("{", "{}{}", "{\"resources\":[],\"resources\":[]}")) {
+            assertTrue(assertThrows(IllegalArgumentException.class, () -> service.importCollection(write(broken)))
+                    .getMessage().contains("Malformed"));
+        }
+        String nested = "{\"object\":".repeat(220) + "{}" + "}".repeat(220);
+        assertTrue(assertThrows(IllegalArgumentException.class, () -> service.importCollection(write(nested)))
+                .getMessage().contains("nesting"));
+        String folders = "{\"name\":\"Folder\",\"item\":[".repeat(65) + "] }".repeat(65);
+        assertTrue(assertThrows(IllegalArgumentException.class,
+                () -> service.importCollection(write(postman(folders, "")))).getMessage().contains("64"));
+    }
 
-        ImportedCollection firstCollection =
-                new ImportedCollection(
-                        "First",
-                        List.of(),
-                        List.of()
-                );
+    @Test
+    void rejectsBoundedOversizedPropertyNamesInUtf8AndUtf16() throws IOException {
+        String input = "{\"" + "a".repeat(65_000) + "\":0}";
+        var file = directory.resolve("property.json");
+        for (var charset : List.of(java.nio.charset.StandardCharsets.UTF_8,
+                java.nio.charset.StandardCharsets.UTF_16)) {
+            Files.writeString(file, input, charset);
+            assertTrue(assertThrows(IllegalArgumentException.class, () -> service().importCollection(file))
+                    .getMessage().contains("parsing size"));
+        }
+    }
 
-        when(firstImporter.supports(file))
-                .thenReturn(true);
+    @Test
+    void rejectsRecursiveOpenApiGeneratedExamplesWithoutOverflow() throws IOException {
+        var file = write("""
+                {"openapi":"3.1.0","info":{"title":"Recursive fixture"},
+                 "paths":{"/demo":{"post":{"requestBody":{"content":{"application/json":
+                    {"schema":{"$ref":"#/components/schemas/Node"}}
+                 }}}}},
+                 "components":{"schemas":{"Node":{"type":"object","properties":
+                    {"next":{"$ref":"#/components/schemas/Node"}}
+                 }}}}
+                """);
+        assertTrue(assertThrows(IllegalArgumentException.class, () -> service().importCollection(file))
+                .getMessage().contains("generated examples"));
+    }
 
-        when(secondImporter.supports(file))
-                .thenReturn(true);
+    @Test
+    void rejectsOpenApiExpansionAcrossOperationsBeyondTheTextBudget() throws IOException {
+        var document = mapper.createObjectNode().put("openapi", "3.1.0");
+        document.putObject("info").put("title", "Expansion fixture");
+        document.putObject("components").putObject("parameters").putObject("Demo")
+                .put("in", "query").put("name", "fixture").put("example", "x".repeat(1024 * 1024));
+        var paths = document.putObject("paths");
+        for (int index = 0; index < 17; index++) {
+            paths.putObject("/fixture-" + index).putObject("get").putArray("parameters")
+                    .addObject().put("$ref", "#/components/parameters/Demo");
+        }
+        assertTrue(assertThrows(IllegalArgumentException.class,
+                () -> service().importCollection(write(document.toString()))).getMessage().contains("data exceeds"));
+    }
 
-        when(firstImporter.importCollection(file))
-                .thenReturn(firstCollection);
+    private CollectionImportService service() {
+        return new CollectionImportService(List.of(new PostmanCollectionImporter(mapper),
+                new OpenApiImporter(mapper), new InsomniaCollectionImporter(mapper)));
+    }
 
-        CollectionImportService service =
-                new CollectionImportService(
-                        List.of(
-                                firstImporter,
-                                secondImporter
-                        )
-                );
+    private String postman(String items, String description) {
+        return """
+                {"info":{"name":"Fixture","schema":"https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
+                         "description":"%s"},"item":[%s]}
+                """.formatted(description, items);
+    }
 
-        ImportedCollection result =
-                service.importCollection(file);
-
-        assertEquals(
-                firstCollection,
-                result
-        );
-
-        verify(firstImporter)
-                .importCollection(file);
+    private Path write(String json) throws IOException {
+        return Files.writeString(directory.resolve("collection.json"), json);
     }
 }

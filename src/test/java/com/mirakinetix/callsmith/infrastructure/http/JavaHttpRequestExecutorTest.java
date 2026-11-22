@@ -112,6 +112,13 @@ class JavaHttpRequestExecutorTest {
     }
 
     @Test
+    void shouldAppendQueryParametersBeforeFragment() {
+        HttpRequest request = new HttpRequest("GET", baseUrl + "/query?keep=a%26b#section",
+                Map.of(), Map.of("page", "2"), null);
+        assertEquals("keep=a%26b&page=2", new JavaHttpRequestExecutor().execute(request).body());
+    }
+
+    @Test
     void shouldSendRequestHeaders() {
         JavaHttpRequestExecutor executor = new JavaHttpRequestExecutor();
 
@@ -217,7 +224,7 @@ class JavaHttpRequestExecutorTest {
 
         assertEquals(200, response.statusCode());
         assertEquals("redirect target", response.body());
-        assertEquals(baseUrl + "/final", response.url());
+        assertEquals(baseUrl, response.url(), "Redirect paths and queries may contain credentials");
     }
 
     @Test

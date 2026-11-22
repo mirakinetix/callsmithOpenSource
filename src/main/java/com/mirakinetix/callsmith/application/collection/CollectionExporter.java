@@ -10,6 +10,6 @@ public interface CollectionExporter {
 
     void exportCollection(
             CollectionWorkspaceService.CollectionWorkspace workspace,
-            Path file
+            CollectionExportDestination destination
     );
 }

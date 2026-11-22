@@ -542,12 +542,7 @@ class OpenApiImporterTest {
                                 importer.importCollection(file)
                 );
 
-        assertTrue(
-                exception.getMessage()
-                        .startsWith(
-                                "Unable to read OpenAPI document:"
-                        )
-        );
+        assertEquals("Malformed collection JSON.", exception.getMessage());
     }
 
     @Test

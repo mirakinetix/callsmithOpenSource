@@ -4,8 +4,8 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.mirakinetix.callsmith.application.collection.CollectionExporter;
+import com.mirakinetix.callsmith.application.collection.CollectionExportDestination;
 import com.mirakinetix.callsmith.application.collection.CollectionWorkspaceService;
-import com.mirakinetix.callsmith.domain.collection.CollectionFolder;
 import com.mirakinetix.callsmith.domain.request.SavedRequest;
 
 import java.io.IOException;
@@ -51,7 +51,7 @@ public final class PostmanCollectionExporter
     @Override
     public void exportCollection(
             CollectionWorkspaceService.CollectionWorkspace workspace,
-            Path file
+            CollectionExportDestination destination
     ) {
         if (workspace == null) {
             throw new IllegalArgumentException(
@@ -59,7 +59,7 @@ public final class PostmanCollectionExporter
             );
         }
 
-        if (file == null) {
+        if (destination == null) {
             throw new IllegalArgumentException(
                     "Export file is required"
             );
@@ -86,19 +86,9 @@ public final class PostmanCollectionExporter
                 POSTMAN_SCHEMA
         );
 
-        ArrayNode items =
-                root.putArray("item");
-
-        appendRequests(
-                items,
-                workspace.requestsByFolder().get("")
-        );
-
-        appendFolders(
-                items,
-                workspace,
-                null
-        );
+        // Callsmith stores manually entered URL queries and editor fields independently.
+        root.put("x-callsmith-url-parts", true);
+        appendChildren(root.putArray("item"), workspace, "", new java.util.HashSet<>());
 
         try {
             String json =
@@ -106,62 +96,28 @@ public final class PostmanCollectionExporter
                             .writerWithDefaultPrettyPrinter()
                             .writeValueAsString(root);
 
-            Files.writeString(
-                    file,
-                    json,
-                    StandardCharsets.UTF_8
-            );
+            destination.write(path -> Files.writeString(path, json, StandardCharsets.UTF_8));
 
         } catch (IOException exception) {
             throw new IllegalStateException(
-                    "Unable to export Postman collection to: "
-                            + file,
+                    "Unable to export Postman collection to " + destination.path() + ". " + exception.getMessage(),
                     exception
             );
         }
     }
 
-    private void appendFolders(
-            ArrayNode items,
-            CollectionWorkspaceService.CollectionWorkspace workspace,
-            String parentFolderId
-    ) {
-        String parentKey =
-                parentFolderId == null
-                        ? ""
-                        : parentFolderId;
-
-        List<CollectionFolder> folders =
-                workspace.foldersByParent()
-                        .get(parentKey);
-
-        if (folders == null) {
-            return;
-        }
-
-        for (CollectionFolder folder : folders) {
-            ObjectNode folderItem =
-                    items.addObject();
-
-            folderItem.put(
-                    "name",
-                    folder.name()
-            );
-
-            ArrayNode folderItems =
-                    folderItem.putArray("item");
-
-            appendRequests(
-                    folderItems,
-                    workspace.requestsByFolder()
-                            .get(folder.id())
-            );
-
-            appendFolders(
-                    folderItems,
-                    workspace,
-                    folder.id()
-            );
+    private void appendChildren(ArrayNode items, CollectionWorkspaceService.CollectionWorkspace workspace,
+                                String parent, java.util.Set<String> visited) {
+        for (var child : workspace.orderedChildren(parent)) {
+            if (child.folder() == null) {
+                appendRequests(items, List.of(child.request()));
+            } else {
+                var folder = child.folder();
+                if (!visited.add(folder.id())) throw new IllegalStateException("Invalid collection hierarchy.");
+                var item = items.addObject();
+                item.put("name", folder.name());
+                appendChildren(item.putArray("item"), workspace, folder.id(), visited);
+            }
         }
     }
 

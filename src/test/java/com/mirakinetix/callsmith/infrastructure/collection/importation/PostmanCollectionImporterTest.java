@@ -544,12 +544,7 @@ class PostmanCollectionImporterTest {
                         () -> importer.importCollection(file)
                 );
 
-        assertTrue(
-                exception.getMessage()
-                        .startsWith(
-                                "Unable to read Postman collection:"
-                        )
-        );
+        assertEquals("Malformed collection JSON.", exception.getMessage());
     }
 
     @Test

@@ -11,4 +11,9 @@ public record EnvironmentVariable(
         Instant createdAt,
         Instant updatedAt
 ) {
+    @Override
+    public String toString() {
+        return "EnvironmentVariable[id=" + id + ", environmentId=" + environmentId
+                + ", name=" + name + ", secret=" + secret + "]";
+    }
 }

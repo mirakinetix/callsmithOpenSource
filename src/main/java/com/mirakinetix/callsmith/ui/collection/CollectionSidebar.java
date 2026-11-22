@@ -1,5 +1,6 @@
 package com.mirakinetix.callsmith.ui.collection;
 
+import com.mirakinetix.callsmith.application.collection.CollectionExportDestination;
 import com.mirakinetix.callsmith.application.collection.CollectionExportService;
 import com.mirakinetix.callsmith.application.collection.CollectionWorkspaceService;
 import com.mirakinetix.callsmith.application.collection.importation.CollectionImportPersistenceService;
@@ -10,6 +11,8 @@ import com.mirakinetix.callsmith.domain.collection.importation.ImportedCollectio
 import com.mirakinetix.callsmith.domain.request.SavedRequest;
 import com.mirakinetix.callsmith.ui.Icon;
 import com.mirakinetix.callsmith.ui.IconView;
+import javafx.beans.property.SimpleBooleanProperty;
+import javafx.concurrent.Task;
 import javafx.event.ActionEvent;
 import javafx.geometry.Insets;
 import javafx.scene.control.Alert;
@@ -35,7 +38,14 @@ import java.time.Instant;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
+import java.util.function.Predicate;
 import java.util.function.Consumer;
+import java.util.ArrayList;
+import com.mirakinetix.callsmith.ui.request.RequestBuilderView;
+import javafx.scene.control.ChoiceDialog;
+import javafx.scene.control.ContextMenu;
+import javafx.scene.control.MenuItem;
+import javafx.scene.control.TextInputDialog;
 
 public final class CollectionSidebar extends BorderPane {
 
@@ -46,7 +56,13 @@ public final class CollectionSidebar extends BorderPane {
     private final CollectionImportService importService;
     private final CollectionImportPersistenceService
             importPersistenceService;
-    private final Consumer<SavedRequest> requestSelectionHandler;
+    private final Predicate<SavedRequest> requestSelectionHandler;
+    private final SimpleBooleanProperty importRunning = new SimpleBooleanProperty();
+    private final Label importStatus = new Label();
+    private final Button cancelImport = new Button("Cancel import");
+    private boolean importCancelled;
+
+    public boolean isImportRunning() { return importRunning.get(); }
 
     private final TreeView<WorkspaceItem> treeView =
             new TreeView<>();
@@ -57,7 +73,7 @@ public final class CollectionSidebar extends BorderPane {
             CollectionImportService importService,
             CollectionImportPersistenceService
                     importPersistenceService,
-            Consumer<SavedRequest> requestSelectionHandler
+            Predicate<SavedRequest> requestSelectionHandler
     ) {
         if (workspaceService == null) {
             throw new IllegalArgumentException(
@@ -112,6 +128,243 @@ public final class CollectionSidebar extends BorderPane {
         loadCollections();
     }
 
+    private RequestBuilderView editor;
+    private boolean restoringSelection;
+    private Consumer<Collection> runCollectionAction;
+
+    public void setRunCollectionAction(Consumer<Collection> action) { runCollectionAction = action; }
+
+    private void runSelectedCollection() {
+        Collection selected = getSelectedCollection();
+        if (selected == null) {
+            showInformation("Run Collection", "Select a collection first.");
+        } else if (runCollectionAction != null) {
+            runCollectionAction.accept(selected);
+        }
+    }
+
+    public void bindRequestEditor(RequestBuilderView editor) {
+        this.editor = editor;
+        editor.setRequestActions(() -> saveEditor(false), () -> saveEditor(true));
+    }
+
+    private void saveEditor(boolean copy) {
+        SavedRequest existing = editor.savedRequest();
+        try {
+            if (!copy && existing != null) {
+                SavedRequest current = workspaceService.findSavedRequest(existing.id())
+                        .orElseThrow(() -> new IllegalArgumentException(
+                                "The saved request was deleted. Use Save As to keep your draft."));
+                persistEditor(current, current.collectionId(), current.folderId(), current.name());
+                return;
+            }
+
+            Destination destination = chooseDestination("Save Request");
+            if (destination == null) {
+                return;
+            }
+            promptName("Save Request", existing == null ? "" : existing.name() + " copy")
+                    .ifPresent(name -> persistEditor(null, destination.collectionId(),
+                            destination.folderId(), name));
+        } catch (RuntimeException exception) {
+            showError("Unable to save request", workspaceError(exception));
+        }
+    }
+
+    private void persistEditor(SavedRequest existing, String collectionId,
+                               String folderId, String name) {
+        RequestBuilderView.Draft draft = editor.draft();
+        if (draft.url().isBlank()) {
+            throw new IllegalArgumentException("Enter a URL before saving.");
+        }
+
+        Instant now = Instant.now();
+        SavedRequest saved = workspaceService.saveRequest(new SavedRequest(
+                existing == null ? UUID.randomUUID().toString() : existing.id(),
+                collectionId, folderId, name, draft.method(), draft.url().trim(),
+                draft.headers(), draft.query(), draft.body(),
+                existing == null ? 0 : existing.sortOrder(),
+                existing == null ? now : existing.createdAt(), now));
+        editor.markSaved(saved);
+        reloadAfterWrite(WorkspaceItem.request(saved));
+    }
+
+    private Destination chooseDestination(String title) {
+        List<Destination> destinations = new ArrayList<>();
+        collectDestinations(treeView.getRoot(), "", null, destinations);
+        if (destinations.isEmpty()) {
+            showInformation(title, "Create a collection first.");
+            return null;
+        }
+        TreeItem<WorkspaceItem> selected = treeView.getSelectionModel().getSelectedItem();
+        if (selected != null && selected.getValue().type() == WorkspaceItemType.REQUEST) {
+            selected = selected.getParent();
+        }
+        String selectedId = selected == null ? null : selected.getValue().id();
+        Destination initial = destinations.stream()
+                .filter(destination -> destination.selectionId().equals(selectedId))
+                .findFirst().orElse(destinations.getFirst());
+        ChoiceDialog<Destination> dialog = new ChoiceDialog<>(initial, destinations);
+        prepareDialog(dialog, title);
+        dialog.setHeaderText("Select a collection or folder");
+        return dialog.showAndWait().orElse(null);
+    }
+
+    private void collectDestinations(TreeItem<WorkspaceItem> parent, String path,
+                                     String collectionId, List<Destination> destinations) {
+        for (TreeItem<WorkspaceItem> child : parent.getChildren()) {
+            WorkspaceItem item = child.getValue();
+            if (item.type() == WorkspaceItemType.REQUEST) {
+                continue;
+            }
+            String childPath = path.isEmpty() ? item.displayName() : path + " / " + item.displayName();
+            boolean collection = item.type() == WorkspaceItemType.COLLECTION;
+            String ownerId = collection ? item.id() : collectionId;
+            destinations.add(new Destination(ownerId, collection ? null : item.id(), childPath));
+            collectDestinations(child, childPath, ownerId, destinations);
+        }
+    }
+
+    private record Destination(String collectionId, String folderId, String path) {
+        String selectionId() {
+            return folderId == null ? collectionId : folderId;
+        }
+
+        @Override
+        public String toString() {
+            return path;
+        }
+    }
+
+    private java.util.Optional<String> promptName(String title, String initial) {
+        TextInputDialog dialog = new TextInputDialog(initial);
+        prepareDialog(dialog, title);
+        dialog.setHeaderText(null);
+        dialog.setContentText("Name");
+        return dialog.showAndWait().map(String::trim).filter(name -> !name.isEmpty());
+    }
+
+    private void prepareDialog(Dialog<?> dialog, String title) {
+        dialog.setTitle(title);
+        applyBrandStyles(dialog);
+    }
+
+    private boolean confirm(String title, String message) {
+        Alert alert = new Alert(Alert.AlertType.CONFIRMATION, message, ButtonType.OK, ButtonType.CANCEL);
+        prepareDialog(alert, title);
+        alert.setHeaderText(null);
+        return alert.showAndWait().orElse(ButtonType.CANCEL) == ButtonType.OK;
+    }
+
+    private void reloadAfterWrite() {
+        reloadAfterWrite(null);
+    }
+
+    private void reloadAfterWrite(WorkspaceItem preferred) {
+        try {
+            loadCollections(preferred);
+        } catch (RuntimeException exception) {
+            showError("Workspace refresh failed", "The change was saved, but the tree could not be refreshed.");
+        }
+    }
+
+    private String workspaceError(RuntimeException exception) {
+        if (exception instanceof IllegalArgumentException) {
+            return exception.getMessage();
+        }
+        return "Callsmith could not access the workspace database.";
+    }
+
+    private MenuItem action(String label, Icon icon, Runnable operation) {
+        MenuItem menuItem = new MenuItem(label, new IconView(icon));
+        menuItem.setOnAction(event -> {
+            try {
+                operation.run();
+            } catch (RuntimeException exception) {
+                showError(label, workspaceError(exception));
+            }
+        });
+        return menuItem;
+    }
+
+    private ContextMenu contextMenu(WorkspaceItem item, TreeItem<WorkspaceItem> treeItem) {
+        if (item.type() != WorkspaceItemType.REQUEST) {
+            TreeItem<WorkspaceItem> ancestor = treeItem;
+            while (ancestor.getValue().type() == WorkspaceItemType.FOLDER) {
+                ancestor = ancestor.getParent();
+            }
+            String collectionId = ancestor.getValue().id();
+            String parentId = item.type() == WorkspaceItemType.FOLDER ? item.id() : null;
+            ContextMenu menu = new ContextMenu(action("New Folder", Icon.FOLDER, () ->
+                    promptName("New Folder", "").ifPresent(name -> {
+                        workspaceService.createFolder(collectionId, parentId, name);
+                        reloadAfterWrite();
+                    })));
+            if (parentId != null) {
+                menu.getItems().addAll(
+                        action("Rename Folder", Icon.RENAME, () -> promptName("Rename Folder", item.displayName())
+                                .ifPresent(name -> {
+                                    workspaceService.renameFolder(item.id(), name);
+                                    reloadAfterWrite();
+                                })),
+                        action("Delete Empty Folder", Icon.DELETE, () -> {
+                            if (confirm("Delete Folder", "Delete " + item.displayName() + "?")) {
+                                workspaceService.deleteEmptyFolder(item.id());
+                                reloadAfterWrite();
+                            }
+                        }));
+            }
+            return menu;
+        }
+
+        SavedRequest request = item.request();
+        return new ContextMenu(
+                action("Rename Request", Icon.RENAME, () -> promptName("Rename Request", request.name())
+                        .ifPresent(name -> updateRequest(request, name, null, false))),
+                action("Duplicate Request", Icon.DUPLICATE, () ->
+                        updateRequest(request, request.name() + " copy", null, true)),
+                action("Move Request", Icon.MOVE, () -> {
+                    Destination destination = chooseDestination("Move Request");
+                    if (destination != null) {
+                        updateRequest(request, request.name(), destination, false);
+                    }
+                }),
+                action("Delete Request", Icon.DELETE, () -> {
+                    boolean active = isOpen(request);
+                    if (confirm("Delete Request", "Delete " + request.name() + "?")
+                            && (!active || editor.allowDiscard())) {
+                        workspaceService.deleteRequest(request.id());
+                        if (active) {
+                            editor.clearRequest();
+                        }
+                        reloadAfterWrite();
+                    }
+                }));
+    }
+
+    private boolean isOpen(SavedRequest request) {
+        return editor != null && editor.savedRequest() != null
+                && editor.savedRequest().id().equals(request.id());
+    }
+
+    private void updateRequest(SavedRequest request, String name, Destination destination, boolean copy) {
+        SavedRequest current = workspaceService.findSavedRequest(request.id()).orElseThrow(
+                () -> new IllegalArgumentException("This request no longer exists."));
+        Instant now = Instant.now();
+        SavedRequest saved = workspaceService.saveRequest(new SavedRequest(
+                copy ? UUID.randomUUID().toString() : current.id(),
+                destination == null ? current.collectionId() : destination.collectionId(),
+                destination == null ? current.folderId() : destination.folderId(),
+                name, current.method(), current.url(), current.headers(), current.queryParameters(),
+                current.body(), current.sortOrder(), copy ? now : current.createdAt(), now));
+        if (!copy && isOpen(current)) {
+            editor.updateSavedMetadata(saved);
+            reloadAfterWrite(WorkspaceItem.request(saved));
+        } else {
+            reloadAfterWrite();
+        }
+    }
+
     private void buildLayout() {
         Label title =
                 new Label(
@@ -142,15 +395,28 @@ public final class CollectionSidebar extends BorderPane {
         Button importButton =
                 createActionButton(
                         "Import",
-                        Icon.UPLOAD,
+                        Icon.IMPORT,
                         "Import a collection from a file",
                         this::importCollection
                 );
 
+        importButton.disableProperty().bind(importRunning);
+        importStatus.setId("collection-import-status");
+        importStatus.setWrapText(true);
+        importStatus.visibleProperty().bind(importRunning);
+        importStatus.managedProperty().bind(importStatus.visibleProperty());
+        cancelImport.managedProperty().bind(cancelImport.visibleProperty());
+        cancelImport.setVisible(false);
+        cancelImport.setOnAction(event -> {
+            importCancelled = true;
+            cancelImport.setDisable(true);
+            importStatus.setText("Cancelling import...");
+        });
+
         Button exportButton =
                 createActionButton(
                         "Export",
-                        Icon.DOWNLOAD,
+                        Icon.EXPORT,
                         "Export the selected collection as Postman JSON",
                         this::exportSelectedCollection
                 );
@@ -158,7 +424,7 @@ public final class CollectionSidebar extends BorderPane {
         Button renameButton =
                 createActionButton(
                         "Rename",
-                        Icon.EDIT,
+                        Icon.RENAME,
                         "Rename the selected collection",
                         this::renameSelectedCollection
                 );
@@ -171,8 +437,9 @@ public final class CollectionSidebar extends BorderPane {
                         this::deleteSelectedCollection
                 );
 
-        GridPane actions =
-                new GridPane();
+        Button runButton = createActionButton("Run", Icon.PLAY, "Run saved requests in the selected collection",
+                this::runSelectedCollection);
+        GridPane actions = new GridPane();
 
         actions.setHgap(6);
         actions.setVgap(6);
@@ -190,6 +457,7 @@ public final class CollectionSidebar extends BorderPane {
         actions.add(exportButton, 0, 1);
         actions.add(renameButton, 1, 1);
         actions.add(deleteButton, 0, 2);
+        actions.add(runButton, 1, 2);
 
         for (Button button :
                 List.of(
@@ -197,7 +465,8 @@ public final class CollectionSidebar extends BorderPane {
                         importButton,
                         exportButton,
                         renameButton,
-                        deleteButton
+                        deleteButton,
+                        runButton
                 )) {
             button.setMaxWidth(Double.MAX_VALUE);
             GridPane.setHgrow(button, Priority.ALWAYS);
@@ -208,9 +477,12 @@ public final class CollectionSidebar extends BorderPane {
         VBox header =
                 new VBox(
                         title,
-                        actions
+                        actions,
+                        importStatus,
+                        cancelImport
                 );
 
+        treeView.setId("collection-tree");
         treeView.setShowRoot(false);
 
         treeView.setCellFactory(
@@ -220,8 +492,18 @@ public final class CollectionSidebar extends BorderPane {
         treeView.getSelectionModel()
                 .selectedItemProperty()
                 .addListener(
-                        (observable, oldItem, newItem) ->
-                                handleSelection(newItem)
+                        (observable, oldItem, newItem) -> {
+                            if (!restoringSelection && !handleSelection(newItem)) {
+                                javafx.application.Platform.runLater(() -> {
+                                    restoringSelection = true;
+                                    try {
+                                        treeView.getSelectionModel().select(oldItem);
+                                    } finally {
+                                        restoringSelection = false;
+                                    }
+                                });
+                            }
+                        }
                 );
 
         setTop(header);
@@ -248,13 +530,27 @@ public final class CollectionSidebar extends BorderPane {
         );
 
         button.setOnAction(
-                event -> action.run()
+                event -> {
+                    try {
+                        action.run();
+                    } catch (RuntimeException exception) {
+                        showError(text, workspaceError(exception));
+                    }
+                }
         );
 
         return button;
     }
 
     private void loadCollections() {
+        loadCollections(null);
+    }
+
+    private void loadCollections(WorkspaceItem preferred) {
+        TreeItem<WorkspaceItem> current = treeView.getSelectionModel().getSelectedItem();
+        WorkspaceItem target = preferred != null ? preferred : current == null ? null : current.getValue();
+        Map<ItemKey, Boolean> expansion = new java.util.HashMap<>();
+        rememberExpansion(treeView.getRoot(), expansion);
         TreeItem<WorkspaceItem> root =
                 new TreeItem<>();
 
@@ -273,17 +569,7 @@ public final class CollectionSidebar extends BorderPane {
                             collection
                     );
 
-            addRootRequests(
-                    collectionItem,
-                    workspace.requestsByFolder()
-            );
-
-            addFolders(
-                    collectionItem,
-                    null,
-                    workspace.foldersByParent(),
-                    workspace.requestsByFolder()
-            );
+            addChildren(collectionItem, "", workspace, new java.util.HashSet<>());
 
             collectionItem.setExpanded(true);
 
@@ -292,7 +578,50 @@ public final class CollectionSidebar extends BorderPane {
             );
         }
 
-        treeView.setRoot(root);
+        TreeItem<WorkspaceItem> selection = restoreExpansion(root, expansion,
+                target == null ? null : ItemKey.of(target));
+        restoringSelection = true;
+        try {
+            treeView.setRoot(root);
+            if (selection != null) {
+                for (var ancestor = selection.getParent(); ancestor != null; ancestor = ancestor.getParent()) {
+                    ancestor.setExpanded(true);
+                }
+                treeView.getSelectionModel().select(selection);
+                treeView.scrollTo(treeView.getRow(selection));
+            }
+        } finally {
+            restoringSelection = false;
+        }
+    }
+
+    private void rememberExpansion(TreeItem<WorkspaceItem> item, Map<ItemKey, Boolean> expansion) {
+        if (item == null) return;
+        if (item.getValue() != null && item.getValue().type() != WorkspaceItemType.REQUEST) {
+            expansion.put(ItemKey.of(item.getValue()), item.isExpanded());
+        }
+        for (var child : item.getChildren()) rememberExpansion(child, expansion);
+    }
+
+    private TreeItem<WorkspaceItem> restoreExpansion(TreeItem<WorkspaceItem> item,
+                                                     Map<ItemKey, Boolean> expansion, ItemKey target) {
+        TreeItem<WorkspaceItem> selection = null;
+        if (item.getValue() != null) {
+            ItemKey key = ItemKey.of(item.getValue());
+            if (expansion.containsKey(key)) item.setExpanded(expansion.get(key));
+            if (key.equals(target)) selection = item;
+        }
+        for (var child : item.getChildren()) {
+            var match = restoreExpansion(child, expansion, target);
+            if (match != null) selection = match;
+        }
+        return selection;
+    }
+
+    private record ItemKey(WorkspaceItemType type, String id) {
+        private static ItemKey of(WorkspaceItem item) {
+            return new ItemKey(item.type(), item.id());
+        }
     }
 
     private void createCollection() {
@@ -560,11 +889,16 @@ public final class CollectionSidebar extends BorderPane {
                 )
                 .ifPresent(
                         ignored -> {
-                            workspaceService.deleteCollection(
-                                    collection.id()
-                            );
-
-                            loadCollections();
+                            boolean open = editor != null && editor.savedRequest() != null
+                                    && editor.savedRequest().collectionId().equals(collection.id());
+                            if (open && !editor.allowDiscard()) return;
+                            try {
+                                workspaceService.deleteCollection(collection.id());
+                                if (open) editor.clearRequest();
+                                reloadAfterWrite();
+                            } catch (RuntimeException exception) {
+                                showError("Delete Collection", workspaceError(exception));
+                            }
                         }
                 );
     }
@@ -614,29 +948,24 @@ public final class CollectionSidebar extends BorderPane {
             return;
         }
 
-        File exportFile =
-                ensureJsonExtension(selectedFile);
+        exportCollection(collection, selectedFile.toPath());
+    }
 
+    void exportCollection(Collection collection, Path selected) {
         try {
-            exportService.exportCollection(
-                    collection,
-                    exportFile.toPath()
-            );
-
-            showInformation(
-                    "Export successful",
-                    "Exported collection to:"
-                            + System.lineSeparator()
-                            + exportFile.getAbsolutePath()
-            );
-
+            var target = CollectionExportDestination.prepare(selected);
+            boolean replace = target.requiresConfirmation();
+            if (replace && !confirm("Replace collection export", "Replace the existing file?\n" + target.path())) {
+                return;
+            }
+            if (!replace && !target.path().equals(selected.toAbsolutePath().normalize())
+                    && !confirm("Confirm export filename", "Save the collection to:\n" + target.path())) {
+                return;
+            }
+            exportService.exportCollection(collection, target, replace);
+            showInformation("Export successful", "Exported collection to:\n" + target.path());
         } catch (RuntimeException exception) {
-            showError(
-                    "Export failed",
-                    exception.getMessage() == null
-                            ? exception.toString()
-                            : exception.getMessage()
-            );
+            showError("Export failed", exception.getMessage());
         }
     }
 
@@ -658,23 +987,6 @@ public final class CollectionSidebar extends BorderPane {
         }
 
         return safeName + ".postman_collection.json";
-    }
-
-    private File ensureJsonExtension(
-            File file
-    ) {
-        String fileName =
-                file.getName();
-
-        if (fileName.toLowerCase()
-                .endsWith(".json")) {
-            return file;
-        }
-
-        return new File(
-                file.getParentFile(),
-                fileName + ".json"
-        );
     }
 
     private Collection getSelectedCollection() {
@@ -712,6 +1024,7 @@ public final class CollectionSidebar extends BorderPane {
     }
 
     private void importCollection() {
+        if (isImportRunning()) return;
         FileChooser fileChooser =
                 new FileChooser();
 
@@ -722,18 +1035,11 @@ public final class CollectionSidebar extends BorderPane {
         fileChooser.getExtensionFilters().addAll(
                 new FileChooser.ExtensionFilter(
                         "API Collections",
-                        "*.json",
-                        "*.yaml",
-                        "*.yml"
+                        "*.json"
                 ),
                 new FileChooser.ExtensionFilter(
                         "JSON",
                         "*.json"
-                ),
-                new FileChooser.ExtensionFilter(
-                        "YAML",
-                        "*.yaml",
-                        "*.yml"
                 ),
                 new FileChooser.ExtensionFilter(
                         "All Files",
@@ -753,149 +1059,99 @@ public final class CollectionSidebar extends BorderPane {
             return;
         }
 
-        try {
-            Path file =
-                    selectedFile.toPath();
+        importFile(selectedFile.toPath());
+    }
 
-            ImportedCollection importedCollection =
-                    importService.importCollection(
-                            file
-                    );
+    void importFile(Path file) {
+        if (isImportRunning()) return;
+        importRunning.set(true);
+        importCancelled = false;
+        cancelImport.setDisable(false);
+        cancelImport.setVisible(true);
+        importStatus.setText("Reading collection...");
+        var read = new Task<ImportedCollection>() {
+            @Override protected ImportedCollection call() {
+                return importService.importCollection(file);
+            }
+        };
+        read.setOnSucceeded(event -> {
+            if (importCancelled) {
+                finishImport();
+            } else {
+                persistImport(read.getValue());
+            }
+        });
+        read.setOnFailed(event -> finishImportFailure(read.getException()));
+        Thread.startVirtualThread(read);
+    }
 
-            importPersistenceService.persist(
-                    importedCollection
-            );
+    private void persistImport(ImportedCollection collection) {
+        cancelImport.setVisible(false);
+        importStatus.setText("Saving collection...");
+        var save = new Task<Void>() {
+            @Override protected Void call() {
+                importPersistenceService.persist(collection);
+                return null;
+            }
+        };
+        save.setOnSucceeded(event -> {
+            finishImport();
+            reloadAfterWrite();
+            showInformation("Import successful", "Imported collection: " + collection.name()
+                    + (collection.warnings().isEmpty() ? "" : "\n\nReview before running:\n"
+                    + String.join("\n", collection.warnings())));
+        });
+        save.setOnFailed(event -> finishImportFailure(save.getException()));
+        Thread.startVirtualThread(save);
+    }
 
-            loadCollections();
-
-            showInformation(
-                    "Import successful",
-                    "Imported collection: "
-                            + importedCollection.name()
-            );
-
-        } catch (RuntimeException exception) {
-            showError(
-                    "Import failed",
-                    exception.getMessage() == null
-                            ? exception.toString()
-                            : exception.getMessage()
-            );
+    private void finishImportFailure(Throwable failure) {
+        boolean cancelled = importCancelled;
+        finishImport();
+        if (!cancelled) {
+            String message = failure instanceof IllegalArgumentException ? failure.getMessage()
+                    : "Callsmith could not finish importing the collection.";
+            showError("Import failed", message);
         }
     }
 
-    private void addRootRequests(
-            TreeItem<WorkspaceItem> collectionItem,
-            Map<String, List<SavedRequest>> requestsByFolder
-    ) {
-        List<SavedRequest> requests =
-                requestsByFolder.get("");
+    private void finishImport() {
+        cancelImport.setVisible(false);
+        importStatus.setText("");
+        importRunning.set(false);
+    }
 
-        if (requests == null) {
-            return;
-        }
-
-        for (SavedRequest request : requests) {
-            collectionItem.getChildren().add(
-                    new TreeItem<>(
-                            WorkspaceItem.request(request)
-                    )
-            );
+    private void addChildren(TreeItem<WorkspaceItem> parent, String parentKey,
+                             CollectionWorkspaceService.CollectionWorkspace workspace, java.util.Set<String> visited) {
+        for (var child : workspace.orderedChildren(parentKey)) {
+            if (child.folder() == null) {
+                parent.getChildren().add(new TreeItem<>(WorkspaceItem.request(child.request())));
+            } else if (visited.add(child.folder().id())) {
+                var folder = new TreeItem<>(WorkspaceItem.folder(child.folder()));
+                parent.getChildren().add(folder);
+                addChildren(folder, child.folder().id(), workspace, visited);
+            }
         }
     }
 
-    private void addFolders(
-            TreeItem<WorkspaceItem> parentItem,
-            String parentFolderId,
-            Map<String, List<CollectionFolder>> foldersByParent,
-            Map<String, List<SavedRequest>> requestsByFolder
-    ) {
-        String parentKey =
-                parentFolderId == null
-                        ? ""
-                        : parentFolderId;
-
-        List<CollectionFolder> folders =
-                foldersByParent.get(parentKey);
-
-        if (folders == null) {
-            return;
-        }
-
-        for (CollectionFolder folder : folders) {
-            TreeItem<WorkspaceItem> folderItem =
-                    new TreeItem<>(
-                            WorkspaceItem.folder(folder)
-                    );
-
-            addFolderRequests(
-                    folderItem,
-                    folder.id(),
-                    requestsByFolder
-            );
-
-            addFolders(
-                    folderItem,
-                    folder.id(),
-                    foldersByParent,
-                    requestsByFolder
-            );
-
-            parentItem.getChildren().add(
-                    folderItem
-            );
-        }
-    }
-
-    private void addFolderRequests(
-            TreeItem<WorkspaceItem> folderItem,
-            String folderId,
-            Map<String, List<SavedRequest>> requestsByFolder
-    ) {
-        List<SavedRequest> requests =
-                requestsByFolder.get(folderId);
-
-        if (requests == null) {
-            return;
-        }
-
-        for (SavedRequest request : requests) {
-            folderItem.getChildren().add(
-                    new TreeItem<>(
-                            WorkspaceItem.request(request)
-                    )
-            );
-        }
-    }
-
-    private void handleSelection(
+    private boolean handleSelection(
             TreeItem<WorkspaceItem> selectedItem
     ) {
         if (selectedItem == null
                 || selectedItem.getValue() == null) {
-            return;
+            return true;
         }
-
-        WorkspaceItem item =
-                selectedItem.getValue();
-
-        if (item.type() != WorkspaceItemType.REQUEST) {
-            return;
-        }
-
-        SavedRequest request =
-                item.request();
-
-        if (request != null) {
-            requestSelectionHandler.accept(
-                    request
-            );
-        }
+        WorkspaceItem item = selectedItem.getValue();
+        return item.type() != WorkspaceItemType.REQUEST || isOpen(item.request())
+                || requestSelectionHandler.test(item.request());
     }
 
     private void applyBrandStyles(
             Dialog<?> dialog
     ) {
+        if (getScene() != null && dialog.getOwner() == null) {
+            dialog.initOwner(getScene().getWindow());
+        }
         dialog.getDialogPane()
                 .getStylesheets()
                 .add(
@@ -939,7 +1195,7 @@ public final class CollectionSidebar extends BorderPane {
         alert.showAndWait();
     }
 
-    private static final class WorkspaceTreeCell
+    private final class WorkspaceTreeCell
             extends TreeCell<WorkspaceItem> {
 
         @Override
@@ -955,10 +1211,13 @@ public final class CollectionSidebar extends BorderPane {
             if (empty || item == null) {
                 setText(null);
                 setGraphic(null);
+                setContextMenu(null);
                 return;
             }
 
             setText(item.displayName());
+            TreeItem<WorkspaceItem> treeItem = getTreeItem();
+            setContextMenu(treeItem == null ? null : contextMenu(item, treeItem));
 
             setGraphic(
                     new IconView(
